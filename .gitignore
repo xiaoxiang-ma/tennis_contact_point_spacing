@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Data files
+data/sample_videos/*.mp4
+data/sample_videos/*.mov
+data/sample_videos/*.avi
+data/sample_outputs/
+
+# Model weights
+*.pth
+*.pt
+*.onnx
+weights/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+venv/
