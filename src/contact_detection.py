@@ -249,6 +249,7 @@ def detect_contacts(
     min_frame_gap: int = 15,
     use_audio: bool = True,
     debug: bool = False,
+    save_debug_frames: bool = False,
 ) -> Tuple[List[Tuple[int, float, str]], Dict[int, Tuple[float, float, float]]]:
     """Detect contact frames using TrackNet + audio fusion.
 
@@ -262,6 +263,7 @@ def detect_contacts(
         min_frame_gap: Minimum frames between contacts.
         use_audio: Whether to use audio analysis.
         debug: Print debug info.
+        save_debug_frames: Save TrackNet debug visualizations.
 
     Returns:
         Tuple of:
@@ -272,7 +274,7 @@ def detect_contacts(
     if tracknet_detector is None:
         if debug:
             print("Initializing TrackNet detector...")
-        tracknet_detector = TrackNetDetector()
+        tracknet_detector = TrackNetDetector(save_debug_frames=save_debug_frames)
 
     # Run TrackNet ball detection
     if debug:
