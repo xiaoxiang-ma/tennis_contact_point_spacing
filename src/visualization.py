@@ -2,7 +2,6 @@
 
 import cv2
 import numpy as np
-import mediapipe as mp
 from typing import Dict, Optional, Tuple, List
 
 
@@ -29,41 +28,6 @@ SKELETON_CONNECTIONS = [
     ("nose", "left_shoulder", (200, 200, 200)),
     ("nose", "right_shoulder", (200, 200, 200)),
 ]
-
-
-def _world_to_pixel(landmarks_3d: Dict[str, np.ndarray],
-                    frame: np.ndarray,
-                    pose_result) -> Dict[str, Tuple[int, int]]:
-    """Convert pose landmarks to pixel coordinates using MediaPipe's
-    image-space landmarks.
-
-    If pose_result with image landmarks is available, use those directly.
-    Otherwise, fall back to a simple projection of world landmarks.
-    """
-    h, w = frame.shape[:2]
-    pixel_coords = {}
-
-    if pose_result is not None and pose_result.pose_landmarks is not None:
-        from src.pose_estimation import LANDMARK_MAP
-        for name, idx in LANDMARK_MAP.items():
-            lm = pose_result.pose_landmarks.landmark[idx]
-            px = int(lm.x * w)
-            py = int(lm.y * h)
-            pixel_coords[name] = (px, py)
-        # Synthesize pelvis
-        if "left_hip" in pixel_coords and "right_hip" in pixel_coords:
-            lh, rh = pixel_coords["left_hip"], pixel_coords["right_hip"]
-            pixel_coords["pelvis"] = ((lh[0] + rh[0]) // 2, (lh[1] + rh[1]) // 2)
-        if "nose" in pixel_coords:
-            pixel_coords["head"] = pixel_coords["nose"]
-    else:
-        # Fallback: assume landmarks x,y are in [0,1] normalized coords
-        for name, coords in landmarks_3d.items():
-            px = int(coords[0] * w)
-            py = int(coords[1] * h)
-            pixel_coords[name] = (px, py)
-
-    return pixel_coords
 
 
 def draw_skeleton(frame: np.ndarray,
