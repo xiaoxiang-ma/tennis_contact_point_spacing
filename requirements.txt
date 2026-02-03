@@ -7,9 +7,13 @@ matplotlib>=3.7.0
 # Computer Vision
 mediapipe>=0.10.0
 
-# Ball detection
+# Ball detection (TrackNet)
 torch>=2.0.0
 torchvision>=0.15.0
+gdown>=4.7.0
+
+# Audio processing
+moviepy>=1.0.3
 
 # Utilities
 tqdm
