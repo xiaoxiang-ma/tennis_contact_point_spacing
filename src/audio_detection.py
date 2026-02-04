@@ -20,14 +20,20 @@ def extract_audio_from_video(video_path: str, sample_rate: int = 22050) -> Tuple
         Tuple of (audio_samples as 1D numpy array, sample_rate).
 
     Raises:
-        ImportError: If moviepy is not installed.
+        ImportError: If neither moviepy nor ffmpeg extraction works.
         ValueError: If video has no audio track.
     """
+    # Try ffmpeg directly first (more reliable than moviepy)
+    audio = _extract_audio_ffmpeg(video_path, sample_rate)
+    if audio is not None:
+        return audio, sample_rate
+
+    # Fallback to moviepy
     try:
         from moviepy.editor import VideoFileClip
     except ImportError:
         raise ImportError(
-            "moviepy is required for audio extraction. "
+            "Audio extraction requires either ffmpeg in PATH or moviepy. "
             "Install with: pip install moviepy"
         )
 
@@ -37,16 +43,73 @@ def extract_audio_from_video(video_path: str, sample_rate: int = 22050) -> Tuple
         clip.close()
         raise ValueError(f"Video {video_path} has no audio track")
 
-    # Extract audio as numpy array
-    audio = clip.audio.to_soundarray(fps=sample_rate)
+    try:
+        # Extract audio as numpy array
+        # Use buffersize to avoid moviepy's chunking issues with numpy.stack
+        audio = clip.audio.to_soundarray(fps=sample_rate, buffersize=50000)
 
-    # Convert to mono if stereo
-    if len(audio.shape) > 1 and audio.shape[1] > 1:
-        audio = audio.mean(axis=1)
-
-    clip.close()
+        # Convert to mono if stereo
+        if len(audio.shape) > 1 and audio.shape[1] > 1:
+            audio = audio.mean(axis=1)
+    finally:
+        clip.close()
 
     return audio.astype(np.float32), sample_rate
+
+
+def _extract_audio_ffmpeg(video_path: str, sample_rate: int) -> Optional[np.ndarray]:
+    """Extract audio using ffmpeg directly (bypasses moviepy issues).
+
+    Returns:
+        Audio samples as 1D numpy array, or None if ffmpeg not available.
+    """
+    import subprocess
+    import tempfile
+    import os
+
+    try:
+        # Check if ffmpeg is available
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+    # Create temp file for raw audio
+    with tempfile.NamedTemporaryFile(suffix='.raw', delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        # Extract audio as raw PCM (signed 16-bit little-endian, mono)
+        cmd = [
+            'ffmpeg', '-y', '-i', video_path,
+            '-vn',  # No video
+            '-acodec', 'pcm_s16le',  # Raw PCM
+            '-ar', str(sample_rate),  # Sample rate
+            '-ac', '1',  # Mono
+            '-f', 's16le',  # Raw format
+            tmp_path
+        ]
+        result = subprocess.run(cmd, capture_output=True)
+
+        if result.returncode != 0:
+            return None
+
+        # Read raw audio
+        with open(tmp_path, 'rb') as f:
+            raw_data = f.read()
+
+        if len(raw_data) == 0:
+            return None
+
+        # Convert to numpy array (16-bit signed int -> float32 normalized)
+        audio = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32)
+        audio = audio / 32768.0  # Normalize to [-1, 1]
+
+        return audio
+    except Exception:
+        return None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def bandpass_filter(

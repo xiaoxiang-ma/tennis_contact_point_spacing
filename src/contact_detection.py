@@ -95,6 +95,29 @@ def detect_trajectory_contacts(
         print(f"  [trajectory] Speed range: {speeds.min():.0f} - {speeds.max():.0f} px/s")
         print(f"  [trajectory] Reference speed: {ref_speed:.0f} px/s")
 
+        # Show detection gaps (frames where ball was NOT detected)
+        detected_frames = set(t[0] for t in trajectory)
+        if detected_frames:
+            min_f, max_f = min(detected_frames), max(detected_frames)
+            gaps = []
+            gap_start = None
+            for f in range(min_f, max_f + 1):
+                if f not in detected_frames:
+                    if gap_start is None:
+                        gap_start = f
+                else:
+                    if gap_start is not None:
+                        gaps.append((gap_start, f - 1))
+                        gap_start = None
+            if gap_start is not None:
+                gaps.append((gap_start, max_f))
+
+            if gaps:
+                print(f"  [trajectory] Detection gaps (missing ball):")
+                for start, end in gaps:
+                    if end - start >= 2:  # Only show gaps of 3+ frames
+                        print(f"    Frames {start}-{end} ({end - start + 1} frames missing)")
+
     candidates = []
 
     for i in range(1, len(velocities)):
@@ -395,3 +418,80 @@ def detect_contacts_legacy(
         debug=debug,
     )
     return [(f, c) for f, c in contacts]
+
+
+def debug_frame_region(
+    ball_detections: Dict[int, Tuple[float, float, float]],
+    fps: float,
+    target_frame: int,
+    window: int = 10,
+) -> None:
+    """Print detailed debug info around a specific frame.
+
+    Use this to understand why a known contact frame was missed.
+
+    Args:
+        ball_detections: Dict of frame -> (x, y, conf) from TrackNet.
+        fps: Video frame rate.
+        target_frame: The frame to investigate.
+        window: Number of frames before/after to show.
+    """
+    print(f"\n{'='*60}")
+    print(f"DEBUG: Analyzing frames {target_frame - window} to {target_frame + window}")
+    print(f"       Target contact frame: {target_frame}")
+    print(f"{'='*60}")
+
+    # Build trajectory for this region
+    trajectory = [
+        (f, x, y, c) for f, (x, y, c) in sorted(ball_detections.items())
+        if target_frame - window - 5 <= f <= target_frame + window + 5
+    ]
+
+    # Show detection status
+    print(f"\nBall detection status:")
+    for f in range(target_frame - window, target_frame + window + 1):
+        if f in ball_detections:
+            x, y, conf = ball_detections[f]
+            marker = ">>>" if f == target_frame else "   "
+            print(f"  {marker} Frame {f:3d}: DETECTED at ({x:.0f}, {y:.0f}) conf={conf:.2f}")
+        else:
+            marker = ">>>" if f == target_frame else "   "
+            print(f"  {marker} Frame {f:3d}: MISSING")
+
+    # Compute velocities
+    velocities = compute_ball_velocity(trajectory, fps)
+    vel_dict = {v[0]: (v[1], v[2], v[3]) for v in velocities}
+
+    print(f"\nVelocity analysis:")
+    speeds = [v[3] for v in velocities] if velocities else []
+    if speeds:
+        ref_speed = np.median(speeds)
+        print(f"  Reference speed (median): {ref_speed:.0f} px/s")
+        print(f"  Spike threshold (2x): {ref_speed * 2:.0f} px/s")
+
+    print(f"\nFrame-by-frame velocity:")
+    for f in range(target_frame - window, target_frame + window + 1):
+        marker = ">>>" if f == target_frame else "   "
+        if f in vel_dict:
+            vx, vy, speed = vel_dict[f]
+            spike = "SPIKE!" if speeds and speed > np.median(speeds) * 2 else ""
+            print(f"  {marker} Frame {f:3d}: speed={speed:6.0f} px/s  "
+                  f"vel=({vx:+6.0f}, {vy:+6.0f}) {spike}")
+        else:
+            print(f"  {marker} Frame {f:3d}: no velocity (missing detection)")
+
+    # Check for direction reversals
+    print(f"\nDirection reversal analysis:")
+    for i in range(1, len(velocities)):
+        f_prev, vx0, vy0, s0 = velocities[i - 1]
+        f_curr, vx1, vy1, s1 = velocities[i]
+
+        if target_frame - window <= f_curr <= target_frame + window:
+            dot = vx0 * vx1 + vy0 * vy1
+            if dot < 0:
+                cos_angle = dot / (np.sqrt(vx0**2 + vy0**2) * np.sqrt(vx1**2 + vy1**2) + 1e-6)
+                reversal = max(0, -cos_angle)
+                marker = ">>>" if f_curr == target_frame else "   "
+                print(f"  {marker} Frame {f_curr}: REVERSAL detected, strength={reversal:.2f}")
+
+    print(f"{'='*60}\n")
