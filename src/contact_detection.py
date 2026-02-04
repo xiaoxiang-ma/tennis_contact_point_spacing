@@ -14,6 +14,8 @@ from .tracknet import (
     TrackNetDetector,
     extrapolate_ball_position,
     interpolate_ball_position,
+    fill_trajectory_gaps,
+    fill_trajectory_gaps_physics,
 )
 from .audio_detection import detect_contacts_audio
 
@@ -271,6 +273,8 @@ def detect_contacts(
     tracknet_detector: Optional[TrackNetDetector] = None,
     min_frame_gap: int = 15,
     use_audio: bool = True,
+    fill_gaps: bool = True,
+    max_gap_frames: int = 10,
     debug: bool = False,
     save_debug_frames: bool = False,
 ) -> Tuple[List[Tuple[int, float, str]], Dict[int, Tuple[float, float, float]]]:
@@ -285,13 +289,16 @@ def detect_contacts(
         tracknet_detector: Pre-initialized TrackNet detector (optional).
         min_frame_gap: Minimum frames between contacts.
         use_audio: Whether to use audio analysis.
+        fill_gaps: Whether to interpolate ball position through detection gaps.
+            This helps detect contacts when ball is occluded by racket.
+        max_gap_frames: Maximum gap size to fill (larger gaps may be unreliable).
         debug: Print debug info.
         save_debug_frames: Save TrackNet debug visualizations.
 
     Returns:
         Tuple of:
         - List of (frame_num, confidence, source) for contacts
-        - Dict of frame_num -> (x, y, conf) ball positions
+        - Dict of frame_num -> (x, y, conf) ball positions (includes filled gaps)
     """
     # Initialize TrackNet if not provided
     if tracknet_detector is None:
@@ -304,10 +311,24 @@ def detect_contacts(
         print(f"Running TrackNet on {len(frames)} frames...")
 
     ball_detections = tracknet_detector.detect_all(frames, progress=True)
-    trajectory = tracknet_detector.get_ball_trajectory(ball_detections)
 
     if debug:
         print(f"  TrackNet detected ball in {len(ball_detections)}/{len(frames)} frames")
+
+    # Fill gaps in trajectory (critical for detecting contacts during occlusion)
+    if fill_gaps and len(ball_detections) > 4:
+        original_count = len(ball_detections)
+        ball_detections = fill_trajectory_gaps(
+            ball_detections,
+            max_gap=max_gap_frames,
+            min_detections_before=3,
+            min_detections_after=2,
+        )
+        filled_count = len(ball_detections) - original_count
+        if debug and filled_count > 0:
+            print(f"  Filled {filled_count} gap frames via interpolation")
+
+    trajectory = tracknet_detector.get_ball_trajectory(ball_detections)
 
     # Detect contacts from trajectory
     trajectory_contacts = detect_trajectory_contacts(

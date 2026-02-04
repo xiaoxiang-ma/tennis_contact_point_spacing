@@ -520,3 +520,148 @@ def interpolate_ball_position(
     confidence = 0.8 * (c0 + c1) / 2
 
     return (float(x), float(y), float(confidence))
+
+
+def fill_trajectory_gaps(
+    detections: Dict[int, Tuple[float, float, float]],
+    max_gap: int = 10,
+    min_detections_before: int = 3,
+    min_detections_after: int = 2,
+) -> Dict[int, Tuple[float, float, float]]:
+    """Fill gaps in ball detections using interpolation/extrapolation.
+
+    This is critical for contact detection because the ball often disappears
+    near the racket at the moment of contact due to occlusion.
+
+    Args:
+        detections: Dict of frame -> (x, y, confidence) from TrackNet.
+        max_gap: Maximum gap size (frames) to fill. Larger gaps may be unreliable.
+        min_detections_before: Minimum detections needed before gap for extrapolation.
+        min_detections_after: Minimum detections needed after gap for interpolation.
+
+    Returns:
+        Augmented detections dict with filled gaps.
+    """
+    if not detections:
+        return detections
+
+    filled = dict(detections)
+    frames = sorted(detections.keys())
+
+    if len(frames) < 2:
+        return filled
+
+    # Find gaps
+    for i in range(len(frames) - 1):
+        f_start = frames[i]
+        f_end = frames[i + 1]
+        gap_size = f_end - f_start - 1
+
+        if gap_size <= 0 or gap_size > max_gap:
+            continue
+
+        # Check if we have enough detections before and after for reliable fill
+        detections_before = sum(1 for f in frames if f <= f_start)
+        detections_after = sum(1 for f in frames if f >= f_end)
+
+        if detections_before < min_detections_before or detections_after < min_detections_after:
+            continue
+
+        # Fill the gap with interpolation
+        x0, y0, c0 = detections[f_start]
+        x1, y1, c1 = detections[f_end]
+
+        for f in range(f_start + 1, f_end):
+            t = (f - f_start) / (f_end - f_start)
+            x = x0 + t * (x1 - x0)
+            y = y0 + t * (y1 - y0)
+            # Confidence decreases toward middle of gap (most uncertain)
+            edge_dist = min(f - f_start, f_end - f)
+            gap_conf_factor = 0.5 + 0.3 * (edge_dist / (gap_size / 2 + 1))
+            confidence = gap_conf_factor * (c0 + c1) / 2
+
+            filled[f] = (float(x), float(y), float(confidence))
+
+    return filled
+
+
+def fill_trajectory_gaps_physics(
+    detections: Dict[int, Tuple[float, float, float]],
+    fps: float,
+    max_gap: int = 15,
+    gravity_px_per_s2: float = 500.0,
+) -> Dict[int, Tuple[float, float, float]]:
+    """Fill gaps using physics-based trajectory prediction.
+
+    Uses parabolic motion (gravity) for more accurate ball tracking through
+    occlusion, especially useful for lobs and high balls.
+
+    Args:
+        detections: Dict of frame -> (x, y, confidence) from TrackNet.
+        fps: Video frame rate.
+        max_gap: Maximum gap size to fill.
+        gravity_px_per_s2: Gravity in pixels/second^2 (tune based on camera distance).
+
+    Returns:
+        Augmented detections dict with physics-based filled gaps.
+    """
+    if not detections or len(detections) < 4:
+        return detections
+
+    filled = dict(detections)
+    frames = sorted(detections.keys())
+
+    # Find gaps and fill with physics
+    for i in range(len(frames) - 1):
+        f_start = frames[i]
+        f_end = frames[i + 1]
+        gap_size = f_end - f_start - 1
+
+        if gap_size <= 0 or gap_size > max_gap:
+            continue
+
+        # Get velocity from points before the gap
+        prev_frames = [f for f in frames if f <= f_start][-4:]
+        if len(prev_frames) < 2:
+            continue
+
+        # Calculate entry velocity
+        f_prev = prev_frames[-2] if len(prev_frames) >= 2 else prev_frames[-1]
+        x_prev, y_prev, _ = detections[f_prev]
+        x_start, y_start, c_start = detections[f_start]
+
+        dt = (f_start - f_prev) / fps
+        if dt <= 0:
+            continue
+
+        vx = (x_start - x_prev) / dt
+        vy = (y_start - y_prev) / dt
+
+        # Get exit position for hybrid prediction
+        x_end, y_end, c_end = detections[f_end]
+
+        # Fill gap frames
+        for f in range(f_start + 1, f_end):
+            t = (f - f_start) / fps
+
+            # Physics prediction (parabolic)
+            x_physics = x_start + vx * t
+            y_physics = y_start + vy * t + 0.5 * gravity_px_per_s2 * t * t
+
+            # Linear interpolation
+            t_norm = (f - f_start) / (f_end - f_start)
+            x_linear = x_start + t_norm * (x_end - x_start)
+            y_linear = y_start + t_norm * (y_end - y_start)
+
+            # Blend: trust physics more near start, linear more near end
+            blend = t_norm  # 0 at start, 1 at end
+            x = (1 - blend) * x_physics + blend * x_linear
+            y = (1 - blend) * y_physics + blend * y_linear
+
+            # Confidence based on gap position
+            edge_dist = min(f - f_start, f_end - f)
+            confidence = 0.4 + 0.2 * (edge_dist / (gap_size / 2 + 1))
+
+            filled[f] = (float(x), float(y), float(confidence))
+
+    return filled
