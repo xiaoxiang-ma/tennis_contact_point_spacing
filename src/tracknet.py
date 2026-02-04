@@ -2,6 +2,10 @@
 
 Based on the architecture from https://github.com/yastrebksv/TrackNet
 Pre-trained weights available for download.
+
+TrackNetV4 motion attention based on:
+https://github.com/TrackNetV4/TrackNetV4
+"TrackNetV4: Enhancing Fast Sports Object Tracking with Motion Attention Maps" (ICASSP 2025)
 """
 
 import os
@@ -9,6 +13,7 @@ import cv2
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import List, Tuple, Optional, Dict
 from tqdm import tqdm
 
@@ -73,6 +78,170 @@ class ConvBlock(nn.Module):
 
     def forward(self, x):
         return self.block(x)
+
+
+class MotionAttentionModule(nn.Module):
+    """Motion attention module based on TrackNetV4.
+
+    Computes frame differences and applies power normalization to generate
+    attention maps that highlight moving regions (like the ball).
+
+    This is a plug-and-play module that doesn't require retraining - it uses
+    frame differencing to emphasize areas with motion.
+
+    Reference: TrackNetV4 (ICASSP 2025)
+    https://github.com/TrackNetV4/TrackNetV4
+    """
+
+    # Grayscale conversion weights (ITU-R BT.601)
+    GRAY_WEIGHTS = torch.tensor([0.299, 0.587, 0.114])
+
+    def __init__(
+        self,
+        a_init: float = 0.1,
+        b_init: float = 0.0,
+        learnable: bool = False,
+        boost_factor: float = 2.0,
+        min_attention: float = 0.3,
+    ):
+        """Initialize motion attention module.
+
+        Args:
+            a_init: Initial value for power normalization 'a' parameter.
+            b_init: Initial value for power normalization 'b' parameter.
+            learnable: Whether a/b parameters should be learnable (for training).
+            boost_factor: How much to boost detections in high-motion areas.
+            min_attention: Minimum attention value (prevents complete suppression).
+        """
+        super().__init__()
+
+        # Power normalization parameters
+        if learnable:
+            self.a = nn.Parameter(torch.tensor(a_init))
+            self.b = nn.Parameter(torch.tensor(b_init))
+        else:
+            self.register_buffer('a', torch.tensor(a_init))
+            self.register_buffer('b', torch.tensor(b_init))
+
+        self.boost_factor = boost_factor
+        self.min_attention = min_attention
+
+    def _to_grayscale(self, frames: torch.Tensor) -> torch.Tensor:
+        """Convert RGB frames to grayscale.
+
+        Args:
+            frames: Tensor of shape (B, T, 3, H, W) or (B, 9, H, W).
+
+        Returns:
+            Grayscale tensor of shape (B, T, H, W).
+        """
+        device = frames.device
+        weights = self.GRAY_WEIGHTS.to(device)
+
+        if frames.dim() == 4:
+            # Input is (B, 9, H, W) - 3 concatenated RGB frames
+            B, _, H, W = frames.shape
+            frames = frames.view(B, 3, 3, H, W)  # (B, T=3, C=3, H, W)
+
+        # frames: (B, T, C, H, W)
+        # weights: (3,)
+        # einsum: b t c h w, c -> b t h w
+        grayscale = torch.einsum('btchw,c->bthw', frames, weights)
+        return grayscale
+
+    def _power_normalization(self, x: torch.Tensor) -> torch.Tensor:
+        """Apply power normalization (learnable sigmoid) to frame differences.
+
+        This is the key function from TrackNetV4 that converts raw frame
+        differences into attention weights.
+
+        Args:
+            x: Frame difference tensor.
+
+        Returns:
+            Normalized attention map in [0, 1].
+        """
+        # From TrackNetV4: 1 / (1 + exp(-(5 / (0.45 * |tanh(a)| + 0.1)) * (|x| - 0.6 * tanh(b))))
+        a_norm = 0.45 * torch.abs(torch.tanh(self.a)) + 1e-1
+        scale = 5.0 / a_norm
+        shift = 0.6 * torch.tanh(self.b)
+
+        return torch.sigmoid(scale * (torch.abs(x) - shift))
+
+    def compute_attention(self, frames: torch.Tensor) -> torch.Tensor:
+        """Compute motion attention maps from input frames.
+
+        Args:
+            frames: Input tensor of shape (B, 9, H, W) - 3 RGB frames concatenated.
+
+        Returns:
+            Attention map of shape (B, H, W) highlighting motion regions.
+        """
+        # Convert to grayscale: (B, 3, H, W)
+        grayscale = self._to_grayscale(frames)
+
+        # Compute frame differences: (B, 2, H, W)
+        # diff[0] = frame1 - frame0, diff[1] = frame2 - frame1
+        frame_diff = grayscale[:, 1:] - grayscale[:, :-1]
+
+        # Apply power normalization to get attention maps
+        attention = self._power_normalization(frame_diff)
+
+        # Combine attention from both frame pairs (average or max)
+        # Using max to catch motion in either transition
+        combined_attention, _ = torch.max(attention, dim=1)  # (B, H, W)
+
+        return combined_attention
+
+    def apply_attention(
+        self,
+        heatmap: torch.Tensor,
+        attention: torch.Tensor,
+    ) -> torch.Tensor:
+        """Apply motion attention to detection heatmap.
+
+        Boosts detections in high-motion areas while maintaining a minimum
+        baseline to avoid suppressing valid static detections.
+
+        Args:
+            heatmap: Detection heatmap of shape (B, C, H, W).
+            attention: Motion attention of shape (B, H, W).
+
+        Returns:
+            Modulated heatmap of shape (B, C, H, W).
+        """
+        # Scale attention: min_attention to boost_factor
+        # High motion -> multiply by boost_factor
+        # Low motion -> multiply by min_attention
+        attention_scaled = self.min_attention + attention * (self.boost_factor - self.min_attention)
+
+        # Expand for broadcasting: (B, 1, H, W)
+        attention_scaled = attention_scaled.unsqueeze(1)
+
+        # Apply to heatmap
+        return heatmap * attention_scaled
+
+    def forward(
+        self,
+        frames: torch.Tensor,
+        heatmap: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Compute motion attention and optionally apply to heatmap.
+
+        Args:
+            frames: Input frames (B, 9, H, W).
+            heatmap: Optional detection heatmap to modulate.
+
+        Returns:
+            Tuple of (attention_map, modulated_heatmap or None).
+        """
+        attention = self.compute_attention(frames)
+
+        if heatmap is not None:
+            modulated = self.apply_attention(heatmap, attention)
+            return attention, modulated
+
+        return attention, None
 
 
 class BallTrackerNet(nn.Module):
@@ -462,6 +631,297 @@ class TrackNetDetector:
         ]
         trajectory.sort(key=lambda t: t[0])
         return trajectory
+
+
+class TrackNetV4Detector(TrackNetDetector):
+    """TrackNet detector with motion attention enhancement (TrackNetV4).
+
+    This extends TrackNetDetector by adding motion attention maps that
+    emphasize moving regions in the frame. This helps detect the ball
+    in challenging scenarios:
+    - Near players/rackets (occlusion)
+    - Custom camera angles (different from broadcast training data)
+    - Low contrast scenes
+
+    The motion attention is a plug-and-play enhancement that doesn't
+    require retraining - it uses frame differencing to boost detections
+    in areas with motion.
+
+    Reference: TrackNetV4 (ICASSP 2025)
+    https://arxiv.org/abs/2409.14543
+    """
+
+    def __init__(
+        self,
+        weights_path: Optional[str] = None,
+        device: Optional[str] = None,
+        confidence_threshold: float = 0.5,
+        save_debug_frames: bool = False,
+        debug_output_dir: Optional[str] = None,
+        # Motion attention parameters
+        motion_boost: float = 2.0,
+        motion_min_attention: float = 0.3,
+        use_motion_attention: bool = True,
+    ):
+        """Initialize TrackNetV4 detector.
+
+        Args:
+            weights_path: Path to weights file. If None, downloads automatically.
+            device: 'cuda', 'cpu', or None for auto-detect.
+            confidence_threshold: Minimum confidence to consider a detection.
+            save_debug_frames: Whether to save debug visualizations.
+            debug_output_dir: Directory to save debug frames.
+            motion_boost: Factor to boost detections in high-motion areas.
+            motion_min_attention: Minimum attention (prevents suppressing static balls).
+            use_motion_attention: Whether to use motion attention (can disable for A/B testing).
+        """
+        super().__init__(
+            weights_path=weights_path,
+            device=device,
+            confidence_threshold=confidence_threshold,
+            save_debug_frames=save_debug_frames,
+            debug_output_dir=debug_output_dir,
+        )
+
+        self.use_motion_attention = use_motion_attention
+
+        # Initialize motion attention module
+        self.motion_attention = MotionAttentionModule(
+            boost_factor=motion_boost,
+            min_attention=motion_min_attention,
+            learnable=False,  # No training, just inference-time enhancement
+        ).to(self.device)
+
+        if use_motion_attention:
+            print(f"  Motion attention enabled (boost={motion_boost}, min={motion_min_attention})")
+
+    def postprocess_output_with_motion(
+        self,
+        output: torch.Tensor,
+        input_tensor: torch.Tensor,
+        original_size: Tuple[int, int],
+        frame_idx: Optional[int] = None,
+        input_frame: Optional[np.ndarray] = None,
+    ) -> Optional[Tuple[float, float, float]]:
+        """Extract ball position with motion attention enhancement.
+
+        Args:
+            output: Model output tensor (1, 256, H, W).
+            input_tensor: Original input tensor (1, 9, H, W) for motion computation.
+            original_size: (width, height) of original frame.
+            frame_idx: Frame index for debug output.
+            input_frame: Original frame for debug visualization.
+
+        Returns:
+            (x, y, confidence) in original frame coordinates, or None.
+        """
+        # Get predictions: (H, W) with values 0-255
+        output_np = output.squeeze(0).cpu().numpy()  # (256, H, W)
+
+        # Sum across all non-zero classes to get ball probability heatmap
+        ball_prob = output_np[1:].sum(axis=0)  # (H, W)
+
+        # Apply motion attention if enabled
+        if self.use_motion_attention:
+            # Compute motion attention
+            attention = self.motion_attention.compute_attention(input_tensor)
+            attention_np = attention.squeeze(0).cpu().numpy()  # (H, W)
+
+            # Modulate ball probability with motion attention
+            # High motion areas get boosted, static areas get reduced (but not zeroed)
+            motion_weight = (
+                self.motion_attention.min_attention +
+                attention_np * (self.motion_attention.boost_factor - self.motion_attention.min_attention)
+            )
+            ball_prob_motion = ball_prob * motion_weight
+
+            # Save debug visualization with motion
+            if self.save_debug_frames and frame_idx is not None and input_frame is not None:
+                self._save_debug_frame_v4(
+                    input_frame, ball_prob, ball_prob_motion, attention_np, frame_idx
+                )
+
+            ball_prob = ball_prob_motion
+
+        # Use argmax and check for non-zero class
+        class_pred = output_np.argmax(axis=0)  # (H, W)
+        ball_mask = class_pred > 0
+
+        # Find ball position from probability map
+        max_prob = ball_prob.max()
+
+        if max_prob < self.confidence_threshold or not ball_mask.any():
+            return None
+
+        # Find centroid of detected ball region, weighted by motion-adjusted probability
+        y_coords, x_coords = np.where(ball_mask)
+
+        if len(x_coords) == 0:
+            return None
+
+        # Weight centroid by motion-adjusted probability for better localization
+        weights = ball_prob[ball_mask]
+        if weights.sum() > 0:
+            x_center = np.average(x_coords, weights=weights)
+            y_center = np.average(y_coords, weights=weights)
+        else:
+            x_center = x_coords.mean()
+            y_center = y_coords.mean()
+
+        # Scale to original resolution
+        orig_w, orig_h = original_size
+        x_orig = x_center * orig_w / self.INPUT_WIDTH
+        y_orig = y_center * orig_h / self.INPUT_HEIGHT
+
+        # Confidence based on detection area and max probability
+        confidence = min(max_prob / 10.0, 1.0)  # Normalize
+
+        return (float(x_orig), float(y_orig), float(confidence))
+
+    def _save_debug_frame_v4(
+        self,
+        input_frame: np.ndarray,
+        ball_prob: np.ndarray,
+        ball_prob_motion: np.ndarray,
+        attention: np.ndarray,
+        frame_idx: int,
+    ):
+        """Save debug visualization with motion attention."""
+        import matplotlib.pyplot as plt
+
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+
+        # Original frame
+        frame_rgb = cv2.cvtColor(
+            cv2.resize(input_frame, (self.INPUT_WIDTH, self.INPUT_HEIGHT)),
+            cv2.COLOR_BGR2RGB
+        )
+        axes[0, 0].imshow(frame_rgb)
+        axes[0, 0].set_title(f"Frame {frame_idx}")
+        axes[0, 0].axis('off')
+
+        # Motion attention
+        axes[0, 1].imshow(attention, cmap='hot', vmin=0, vmax=1)
+        axes[0, 1].set_title(f"Motion Attention (max={attention.max():.2f})")
+        axes[0, 1].axis('off')
+
+        # Original ball probability
+        axes[1, 0].imshow(ball_prob, cmap='hot')
+        axes[1, 0].set_title(f"Ball Prob Original (max={ball_prob.max():.2f})")
+        axes[1, 0].axis('off')
+
+        # Motion-modulated ball probability
+        axes[1, 1].imshow(ball_prob_motion, cmap='hot')
+        axes[1, 1].set_title(f"Ball Prob + Motion (max={ball_prob_motion.max():.2f})")
+        axes[1, 1].axis('off')
+
+        plt.tight_layout()
+        plt.savefig(os.path.join(self.debug_output_dir, f"frame_v4_{frame_idx:04d}.png"), dpi=100)
+        plt.close()
+
+    def detect_single(
+        self,
+        frames: List[np.ndarray],
+        frame_idx: Optional[int] = None,
+    ) -> Optional[Tuple[float, float, float]]:
+        """Detect ball in a triplet of frames with motion attention.
+
+        Args:
+            frames: List of exactly 3 consecutive BGR frames.
+            frame_idx: Frame index for debug output.
+
+        Returns:
+            (x, y, confidence) or None if no detection.
+        """
+        if len(frames) != 3:
+            raise ValueError("TrackNet requires exactly 3 frames")
+
+        original_size = (frames[2].shape[1], frames[2].shape[0])
+
+        # Preprocess
+        input_tensor = self.preprocess_frames(frames).to(self.device)
+
+        # Inference
+        with torch.no_grad():
+            output = self.model(input_tensor)
+
+        # Postprocess with motion attention
+        return self.postprocess_output_with_motion(
+            output, input_tensor, original_size,
+            frame_idx=frame_idx,
+            input_frame=frames[2] if self.save_debug_frames else None
+        )
+
+    def detect_all(
+        self,
+        frames: List[np.ndarray],
+        progress: bool = True,
+        frame_skip: int = 1,
+        batch_size: int = 8,
+    ) -> Dict[int, Tuple[float, float, float]]:
+        """Detect ball in all frames with motion attention.
+
+        Args:
+            frames: List of BGR frames.
+            progress: Show progress bar.
+            frame_skip: Process every Nth frame (1 = all frames).
+            batch_size: Number of frame triplets to process at once.
+
+        Returns:
+            Dict mapping frame_num -> (x, y, confidence).
+        """
+        if len(frames) < 3:
+            return {}
+
+        if not self.weights_loaded:
+            print("WARNING: Weights not loaded, detection will not work!")
+
+        results = {}
+        original_size = (frames[0].shape[1], frames[0].shape[0])
+
+        # Build frame indices to process
+        indices = list(range(2, len(frames), frame_skip))
+
+        # Process in batches for efficiency
+        iterator = range(0, len(indices), batch_size)
+        if progress:
+            iterator = tqdm(iterator, desc="TrackNetV4 ball detection (motion attention)",
+                          total=(len(indices) + batch_size - 1) // batch_size)
+
+        for batch_start in iterator:
+            batch_indices = indices[batch_start:batch_start + batch_size]
+
+            # Prepare batch
+            batch_tensors = []
+            for i in batch_indices:
+                triplet = [frames[i-2], frames[i-1], frames[i]]
+                tensor = self.preprocess_frames(triplet)
+                batch_tensors.append(tensor)
+
+            if not batch_tensors:
+                continue
+
+            # Stack into single batch
+            batch = torch.cat(batch_tensors, dim=0).to(self.device)
+
+            # Inference
+            with torch.no_grad():
+                outputs = self.model(batch)
+
+            # Process each output with motion attention
+            for j, i in enumerate(batch_indices):
+                output = outputs[j:j+1]
+                input_tensor = batch[j:j+1]
+
+                result = self.postprocess_output_with_motion(
+                    output, input_tensor, original_size,
+                    frame_idx=i if self.save_debug_frames else None,
+                    input_frame=frames[i] if self.save_debug_frames else None
+                )
+                if result is not None:
+                    results[i] = result
+
+        return results
 
 
 def extrapolate_ball_position(
