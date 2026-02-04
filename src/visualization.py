@@ -352,6 +352,9 @@ def create_diagnostic_video(
         out.write(annotated)
 
     out.release()
+
+    # Re-encode with ffmpeg for web compatibility (H.264)
+    _reencode_video_h264(output_path)
     print(f"Diagnostic video saved to: {output_path}")
 
 
@@ -365,3 +368,57 @@ def _draw_text(frame: np.ndarray, text: str, pos: Tuple[int, int],
     cv2.putText(frame, text, (x, y), font, scale, (0, 0, 0), thickness + 2, cv2.LINE_AA)
     # Text
     cv2.putText(frame, text, (x, y), font, scale, color, thickness, cv2.LINE_AA)
+
+
+def _reencode_video_h264(video_path: str) -> bool:
+    """Re-encode video to H.264 for web compatibility.
+
+    Args:
+        video_path: Path to the video file to re-encode (will be replaced).
+
+    Returns:
+        True if successful, False otherwise.
+    """
+    import subprocess
+    import os
+    import tempfile
+
+    # Check if ffmpeg is available
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        print("  Warning: ffmpeg not found, video may not play in browser")
+        return False
+
+    # Create temp output path
+    temp_path = video_path + '.temp.mp4'
+
+    try:
+        # Re-encode to H.264 with web-compatible settings
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', video_path,
+            '-c:v', 'libx264',
+            '-preset', 'fast',
+            '-crf', '23',
+            '-pix_fmt', 'yuv420p',  # Required for browser compatibility
+            '-movflags', '+faststart',  # Enable streaming
+            '-an',  # No audio
+            temp_path
+        ]
+        result = subprocess.run(cmd, capture_output=True)
+
+        if result.returncode == 0:
+            # Replace original with re-encoded version
+            os.replace(temp_path, video_path)
+            return True
+        else:
+            print(f"  Warning: ffmpeg re-encoding failed, video may not play in browser")
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+            return False
+    except Exception as e:
+        print(f"  Warning: Video re-encoding failed: {e}")
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+        return False
