@@ -302,6 +302,8 @@ def detect_contacts_audio(
     low_freq: float = 1000.0,
     high_freq: float = 4000.0,
     min_gap_ms: float = 300.0,
+    noise_percentile: float = 75.0,
+    peak_threshold_factor: float = 3.0,
     debug: bool = False,
 ) -> List[Tuple[int, float]]:
     """Detect contact frames from audio track.
@@ -315,6 +317,8 @@ def detect_contacts_audio(
         low_freq: Bandpass filter low cutoff.
         high_freq: Bandpass filter high cutoff.
         min_gap_ms: Minimum gap between contacts (ms).
+        noise_percentile: Percentile of envelope to use as noise floor.
+        peak_threshold_factor: Peak must exceed noise floor by this factor.
         debug: Print debug information.
 
     Returns:
@@ -345,6 +349,8 @@ def detect_contacts_audio(
     peaks = find_impact_peaks(
         envelope, sr, video_fps,
         min_gap_ms=min_gap_ms,
+        noise_percentile=noise_percentile,
+        peak_threshold_factor=peak_threshold_factor,
     )
 
     if debug:
