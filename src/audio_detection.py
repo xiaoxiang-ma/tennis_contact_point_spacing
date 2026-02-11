@@ -1,7 +1,10 @@
 """Audio-based contact detection for tennis videos.
 
 Detects ball-racket impact sounds to identify contact frames.
-Tennis ball impacts produce a distinctive sharp sound in the 1-4kHz range.
+Tennis ball impacts produce a distinctive short, symmetric thump in the
+1-4kHz range (~5-20ms duration). This module distinguishes true impacts
+from longer, asymmetric sounds like shoe screeches by analyzing peak shape
+(FWHM duration and rise/fall symmetry).
 """
 
 import numpy as np
@@ -44,8 +47,6 @@ def extract_audio_from_video(video_path: str, sample_rate: int = 22050) -> Tuple
         raise ValueError(f"Video {video_path} has no audio track")
 
     try:
-        # Extract audio as numpy array
-        # Use buffersize to avoid moviepy's chunking issues with numpy.stack
         audio = clip.audio.to_soundarray(fps=sample_rate, buffersize=50000)
 
         # Convert to mono if stereo
@@ -68,24 +69,21 @@ def _extract_audio_ffmpeg(video_path: str, sample_rate: int) -> Optional[np.ndar
     import os
 
     try:
-        # Check if ffmpeg is available
         subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
 
-    # Create temp file for raw audio
     with tempfile.NamedTemporaryFile(suffix='.raw', delete=False) as tmp:
         tmp_path = tmp.name
 
     try:
-        # Extract audio as raw PCM (signed 16-bit little-endian, mono)
         cmd = [
             'ffmpeg', '-y', '-i', video_path,
-            '-vn',  # No video
-            '-acodec', 'pcm_s16le',  # Raw PCM
-            '-ar', str(sample_rate),  # Sample rate
-            '-ac', '1',  # Mono
-            '-f', 's16le',  # Raw format
+            '-vn',
+            '-acodec', 'pcm_s16le',
+            '-ar', str(sample_rate),
+            '-ac', '1',
+            '-f', 's16le',
             tmp_path
         ]
         result = subprocess.run(cmd, capture_output=True)
@@ -93,16 +91,14 @@ def _extract_audio_ffmpeg(video_path: str, sample_rate: int) -> Optional[np.ndar
         if result.returncode != 0:
             return None
 
-        # Read raw audio
         with open(tmp_path, 'rb') as f:
             raw_data = f.read()
 
         if len(raw_data) == 0:
             return None
 
-        # Convert to numpy array (16-bit signed int -> float32 normalized)
         audio = np.frombuffer(raw_data, dtype=np.int16).astype(np.float32)
-        audio = audio / 32768.0  # Normalize to [-1, 1]
+        audio = audio / 32768.0
 
         return audio
     except Exception:
@@ -143,7 +139,6 @@ def bandpass_filter(
     low = low_freq / nyquist
     high = high_freq / nyquist
 
-    # Ensure frequencies are in valid range
     low = max(0.01, min(low, 0.99))
     high = max(low + 0.01, min(high, 0.99))
 
@@ -168,18 +163,107 @@ def compute_envelope(
     Returns:
         Amplitude envelope (same length as input).
     """
-    # Rectify (absolute value)
     rectified = np.abs(audio)
 
-    # Smoothing window
     window_samples = int(sample_rate * window_ms / 1000)
     window_samples = max(1, window_samples)
 
-    # Simple moving average for smoothing
     kernel = np.ones(window_samples) / window_samples
     envelope = np.convolve(rectified, kernel, mode='same')
 
     return envelope
+
+
+def _measure_peak_shape(
+    envelope: np.ndarray,
+    peak_idx: int,
+    sample_rate: int,
+) -> Tuple[float, float]:
+    """Measure shape properties of a peak in the envelope.
+
+    Tennis ball contacts are short (~5-20ms) and symmetric (sharp attack,
+    sharp decay). Shoe screeches are longer (~50-200ms) and asymmetric.
+
+    Args:
+        envelope: Amplitude envelope.
+        peak_idx: Index of the peak sample.
+        sample_rate: Audio sample rate.
+
+    Returns:
+        (fwhm_ms, symmetry) where:
+        - fwhm_ms: Full width at half maximum in milliseconds.
+        - symmetry: rise_time / fall_time ratio, clamped to [0, 1].
+          1.0 = perfectly symmetric, 0.0 = extremely asymmetric.
+    """
+    peak_val = envelope[peak_idx]
+    half_max = peak_val / 2.0
+
+    # Walk left until below half max
+    left = peak_idx
+    while left > 0 and envelope[left] > half_max:
+        left -= 1
+
+    # Walk right until below half max
+    right = peak_idx
+    while right < len(envelope) - 1 and envelope[right] > half_max:
+        right += 1
+
+    fwhm_samples = right - left
+    fwhm_ms = fwhm_samples * 1000.0 / sample_rate
+
+    rise_samples = peak_idx - left
+    fall_samples = right - peak_idx
+
+    if rise_samples > 0 and fall_samples > 0:
+        symmetry = min(rise_samples, fall_samples) / max(rise_samples, fall_samples)
+    else:
+        symmetry = 0.0
+
+    return fwhm_ms, symmetry
+
+
+def _impact_score(
+    height: float,
+    max_height: float,
+    fwhm_ms: float,
+    symmetry: float,
+    max_fwhm_ms: float = 40.0,
+) -> float:
+    """Compute composite score that favors short, symmetric impulses.
+
+    Ball contacts are short and symmetric. Shoe screeches are long and
+    asymmetric. This score penalizes wide and asymmetric peaks so that
+    the true contact wins NMS even if the screech is louder.
+
+    Args:
+        height: Peak amplitude.
+        max_height: Maximum peak amplitude across all candidates.
+        fwhm_ms: Full width at half maximum.
+        symmetry: Rise/fall symmetry ratio (0-1).
+        max_fwhm_ms: Peaks narrower than this get full narrowness credit.
+
+    Returns:
+        Composite score in [0, 1].
+    """
+    # Amplitude component (normalized, but reduced weight)
+    amp_score = height / max_height if max_height > 0 else 0.0
+
+    # Narrowness: 1.0 for peaks <= max_fwhm_ms, decays for wider peaks
+    # A ball contact after 5ms envelope smoothing: ~10-30ms FWHM
+    # A shoe screech: ~50-200ms FWHM
+    if fwhm_ms <= max_fwhm_ms:
+        narrow_score = 1.0
+    else:
+        narrow_score = max_fwhm_ms / fwhm_ms
+
+    # Symmetry score: direct ratio (already 0-1)
+    sym_score = symmetry
+
+    # Weighted composite: shape matters more than raw amplitude
+    # 30% amplitude, 40% narrowness, 30% symmetry
+    score = 0.3 * amp_score + 0.4 * narrow_score + 0.3 * sym_score
+
+    return score
 
 
 def find_impact_peaks(
@@ -190,8 +274,17 @@ def find_impact_peaks(
     noise_percentile: float = 75.0,
     peak_threshold_factor: float = 3.0,
     min_gap_ms: float = 200.0,
+    max_impact_fwhm_ms: float = 40.0,
+    debug: bool = False,
 ) -> List[Tuple[int, float]]:
-    """Find impact sound peaks in audio envelope.
+    """Find impact sound peaks in audio envelope using shape analysis.
+
+    Two-stage approach:
+    1. Find ALL candidate peaks above threshold (small min-distance to
+       avoid duplicates of the same event, not the full min_gap).
+    2. Measure each peak's shape (FWHM, symmetry) and compute a composite
+       score that favors short, symmetric impacts over long screeches.
+    3. NMS with min_gap using composite score (not raw amplitude).
 
     Args:
         envelope: Amplitude envelope.
@@ -201,6 +294,11 @@ def find_impact_peaks(
         noise_percentile: Percentile of envelope to use as noise floor.
         peak_threshold_factor: Peak must exceed noise floor by this factor.
         min_gap_ms: Minimum gap between peaks in milliseconds.
+        max_impact_fwhm_ms: Expected max FWHM of a true ball impact. Peaks
+            narrower than this get full narrowness credit; wider peaks are
+            penalized. Default 40ms accounts for ~20ms impact + 5ms envelope
+            smoothing.
+        debug: Print debug info for each candidate peak.
 
     Returns:
         List of (frame_number, confidence) for detected impacts.
@@ -208,45 +306,70 @@ def find_impact_peaks(
     try:
         from scipy.signal import find_peaks
     except ImportError:
-        # Fallback to simple peak detection
         return _find_peaks_simple(
             envelope, sample_rate, video_fps,
             min_peak_height, noise_percentile, peak_threshold_factor, min_gap_ms
         )
 
-    # Compute adaptive threshold based on noise floor
     noise_floor = np.percentile(envelope, noise_percentile)
     threshold = noise_floor * peak_threshold_factor
 
     if min_peak_height is not None:
         threshold = max(threshold, min_peak_height)
 
-    # Minimum distance between peaks (in samples)
-    min_distance = int(sample_rate * min_gap_ms / 1000)
+    # Stage 1: Find ALL candidate peaks with a small distance (20ms) to
+    # avoid merging distinct events into one. We do NOT use min_gap here
+    # because that would force scipy to pick by amplitude alone.
+    dedup_distance = int(sample_rate * 0.020)  # 20ms dedup
+    dedup_distance = max(dedup_distance, 1)
 
-    # Find peaks
     peaks, properties = find_peaks(
         envelope,
         height=threshold,
-        distance=min_distance,
-        prominence=threshold * 0.5,
+        distance=dedup_distance,
+        prominence=threshold * 0.3,
     )
 
     if len(peaks) == 0:
         return []
 
-    # Convert to frame numbers and compute confidence
-    results = []
+    # Stage 2: Measure shape of each candidate and compute composite score
     peak_heights = properties['peak_heights']
     max_height = peak_heights.max()
 
+    candidates = []
     for peak_idx, height in zip(peaks, peak_heights):
-        # Convert sample index to time, then to frame number
+        fwhm_ms, symmetry = _measure_peak_shape(envelope, peak_idx, sample_rate)
+        score = _impact_score(height, max_height, fwhm_ms, symmetry, max_impact_fwhm_ms)
+
+        if debug:
+            time_sec = peak_idx / sample_rate
+            print(f"    candidate t={time_sec:.3f}s amp={height:.4f} "
+                  f"fwhm={fwhm_ms:.1f}ms sym={symmetry:.2f} score={score:.3f}")
+
+        candidates.append((peak_idx, height, fwhm_ms, symmetry, score))
+
+    # Stage 3: NMS with min_gap — keep the candidate with the highest
+    # composite score (not just tallest) in each window.
+    min_gap_samples = int(sample_rate * min_gap_ms / 1000)
+    candidates.sort(key=lambda c: c[0])  # sort by time
+
+    selected = []
+    for peak_idx, height, fwhm_ms, symmetry, score in candidates:
+        if selected and (peak_idx - selected[-1][0]) < min_gap_samples:
+            # Within min_gap of the previous selected peak — keep better score
+            if score > selected[-1][4]:
+                selected[-1] = (peak_idx, height, fwhm_ms, symmetry, score)
+            continue
+        selected.append((peak_idx, height, fwhm_ms, symmetry, score))
+
+    # Convert to frame numbers with confidence based on composite score
+    max_score = max(s[4] for s in selected) if selected else 1.0
+    results = []
+    for peak_idx, height, fwhm_ms, symmetry, score in selected:
         time_sec = peak_idx / sample_rate
         frame_num = int(time_sec * video_fps)
-
-        # Confidence based on peak prominence
-        confidence = min(0.4 + 0.6 * (height / max_height), 1.0)
+        confidence = min(0.4 + 0.6 * (score / max_score), 1.0)
         results.append((frame_num, confidence))
 
     return results
@@ -268,28 +391,48 @@ def _find_peaks_simple(
     if min_peak_height is not None:
         threshold = max(threshold, min_peak_height)
 
-    min_gap_samples = int(sample_rate * min_gap_ms / 1000)
+    dedup_samples = int(sample_rate * 0.020)  # 20ms dedup
 
-    peaks = []
+    # Find all local maxima above threshold
+    raw_peaks = []
     i = 1
     while i < len(envelope) - 1:
         if envelope[i] > threshold:
-            # Check if local maximum
             if envelope[i] > envelope[i-1] and envelope[i] > envelope[i+1]:
-                peaks.append((i, envelope[i]))
-                i += min_gap_samples  # Skip ahead to enforce minimum gap
+                raw_peaks.append((i, envelope[i]))
+                i += dedup_samples
                 continue
         i += 1
 
-    if not peaks:
+    if not raw_peaks:
         return []
 
-    max_height = max(h for _, h in peaks)
+    # Measure shape and score each candidate
+    max_height = max(h for _, h in raw_peaks)
+    candidates = []
+    for peak_idx, height in raw_peaks:
+        fwhm_ms, symmetry = _measure_peak_shape(envelope, peak_idx, sample_rate)
+        score = _impact_score(height, max_height, fwhm_ms, symmetry)
+        candidates.append((peak_idx, height, fwhm_ms, symmetry, score))
+
+    # NMS with min_gap using composite score
+    min_gap_samples = int(sample_rate * min_gap_ms / 1000)
+    candidates.sort(key=lambda c: c[0])
+
+    selected = []
+    for peak_idx, height, fwhm_ms, symmetry, score in candidates:
+        if selected and (peak_idx - selected[-1][0]) < min_gap_samples:
+            if score > selected[-1][4]:
+                selected[-1] = (peak_idx, height, fwhm_ms, symmetry, score)
+            continue
+        selected.append((peak_idx, height, fwhm_ms, symmetry, score))
+
+    max_score = max(s[4] for s in selected) if selected else 1.0
     results = []
-    for peak_idx, height in peaks:
+    for peak_idx, height, fwhm_ms, symmetry, score in selected:
         time_sec = peak_idx / sample_rate
         frame_num = int(time_sec * video_fps)
-        confidence = min(0.4 + 0.6 * (height / max_height), 1.0)
+        confidence = min(0.4 + 0.6 * (score / max_score), 1.0)
         results.append((frame_num, confidence))
 
     return results
@@ -304,6 +447,7 @@ def detect_contacts_audio(
     min_gap_ms: float = 300.0,
     noise_percentile: float = 75.0,
     peak_threshold_factor: float = 3.0,
+    max_impact_fwhm_ms: float = 40.0,
     debug: bool = False,
 ) -> List[Tuple[int, float]]:
     """Detect contact frames from audio track.
@@ -319,12 +463,12 @@ def detect_contacts_audio(
         min_gap_ms: Minimum gap between contacts (ms).
         noise_percentile: Percentile of envelope to use as noise floor.
         peak_threshold_factor: Peak must exceed noise floor by this factor.
+        max_impact_fwhm_ms: Expected max FWHM of a true ball impact (ms).
         debug: Print debug information.
 
     Returns:
         List of (frame_number, confidence) for detected contacts.
     """
-    # Extract audio
     try:
         audio, sr = extract_audio_from_video(video_path, sample_rate)
     except (ImportError, ValueError) as e:
@@ -336,25 +480,24 @@ def detect_contacts_audio(
         duration = len(audio) / sr
         print(f"  [audio] Extracted {duration:.2f}s of audio at {sr}Hz")
 
-    # Bandpass filter to isolate impact frequencies
     filtered = bandpass_filter(audio, sr, low_freq, high_freq)
-
-    # Compute envelope
     envelope = compute_envelope(filtered, sr, window_ms=5.0)
 
     if debug:
         print(f"  [audio] Envelope range: {envelope.min():.4f} - {envelope.max():.4f}")
+        print(f"  [audio] Peak shape analysis (max impact FWHM: {max_impact_fwhm_ms:.0f}ms):")
 
-    # Find peaks
     peaks = find_impact_peaks(
         envelope, sr, video_fps,
         min_gap_ms=min_gap_ms,
         noise_percentile=noise_percentile,
         peak_threshold_factor=peak_threshold_factor,
+        max_impact_fwhm_ms=max_impact_fwhm_ms,
+        debug=debug,
     )
 
     if debug:
-        print(f"  [audio] Found {len(peaks)} impact peaks")
+        print(f"  [audio] Selected {len(peaks)} impact peaks")
         for frame, conf in peaks:
             time_sec = frame / video_fps
             print(f"    Frame {frame} ({time_sec:.2f}s): confidence {conf:.2f}")
@@ -377,3 +520,65 @@ def get_audio_envelope_for_debug(
     filtered = bandpass_filter(audio, sr, low_freq, high_freq)
     envelope = compute_envelope(filtered, sr, window_ms=5.0)
     return audio, sr, envelope
+
+
+def get_all_candidates_for_debug(
+    video_path: str,
+    video_fps: float,
+    sample_rate: int = 22050,
+    low_freq: float = 1000.0,
+    high_freq: float = 4000.0,
+    noise_percentile: float = 75.0,
+    peak_threshold_factor: float = 3.0,
+    max_impact_fwhm_ms: float = 40.0,
+) -> List[dict]:
+    """Get all candidate peaks with shape metrics for debug visualization.
+
+    Returns:
+        List of dicts with keys: sample_idx, time_sec, frame, amplitude,
+        fwhm_ms, symmetry, score.
+    """
+    try:
+        from scipy.signal import find_peaks
+    except ImportError:
+        return []
+
+    audio, sr = extract_audio_from_video(video_path, sample_rate)
+    filtered = bandpass_filter(audio, sr, low_freq, high_freq)
+    envelope = compute_envelope(filtered, sr, window_ms=5.0)
+
+    noise_floor = np.percentile(envelope, noise_percentile)
+    threshold = noise_floor * peak_threshold_factor
+
+    dedup_distance = int(sr * 0.020)
+    dedup_distance = max(dedup_distance, 1)
+
+    peaks, properties = find_peaks(
+        envelope,
+        height=threshold,
+        distance=dedup_distance,
+        prominence=threshold * 0.3,
+    )
+
+    if len(peaks) == 0:
+        return []
+
+    peak_heights = properties['peak_heights']
+    max_height = peak_heights.max()
+
+    candidates = []
+    for peak_idx, height in zip(peaks, peak_heights):
+        fwhm_ms, symmetry = _measure_peak_shape(envelope, peak_idx, sr)
+        score = _impact_score(height, max_height, fwhm_ms, symmetry, max_impact_fwhm_ms)
+        time_sec = peak_idx / sr
+        candidates.append({
+            'sample_idx': int(peak_idx),
+            'time_sec': time_sec,
+            'frame': int(time_sec * video_fps),
+            'amplitude': float(height),
+            'fwhm_ms': fwhm_ms,
+            'symmetry': symmetry,
+            'score': score,
+        })
+
+    return candidates
