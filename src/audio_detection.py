@@ -235,33 +235,42 @@ def _impact_score(
     asymmetric. This score penalizes wide and asymmetric peaks so that
     the true contact wins NMS even if the screech is louder.
 
+    Narrowness uses a continuous penalty (ideal_fwhm / actual_fwhm)
+    rather than a binary threshold. A 12ms peak scores ~1.0 while a
+    24ms peak scores ~0.5, even though both are under max_fwhm_ms.
+
     Args:
         height: Peak amplitude.
         max_height: Maximum peak amplitude across all candidates.
         fwhm_ms: Full width at half maximum.
         symmetry: Rise/fall symmetry ratio (0-1).
-        max_fwhm_ms: Peaks narrower than this get full narrowness credit.
+        max_fwhm_ms: Hard reject threshold. Also controls the ideal
+            FWHM reference (ideal = max_fwhm_ms * 0.3, default ~12ms).
 
     Returns:
         Composite score in [0, 1].
     """
-    # Amplitude component (normalized, but reduced weight)
+    # Amplitude component (low weight — loudness is unreliable)
     amp_score = height / max_height if max_height > 0 else 0.0
 
-    # Narrowness: 1.0 for peaks <= max_fwhm_ms, decays for wider peaks
-    # A ball contact after 5ms envelope smoothing: ~10-30ms FWHM
-    # A shoe screech: ~50-200ms FWHM
-    if fwhm_ms <= max_fwhm_ms:
+    # Narrowness: continuous penalty using ideal FWHM as reference.
+    # ideal_fwhm ~12ms (a real ball contact after 5ms envelope smoothing).
+    # A 12ms peak scores ~1.0, a 24ms peak scores ~0.5, a 60ms peak ~0.2.
+    # Peaks beyond max_fwhm_ms are hard-capped at a low score.
+    ideal_fwhm_ms = max_fwhm_ms * 0.3  # ~12ms when max_fwhm_ms=40
+    if fwhm_ms <= ideal_fwhm_ms:
         narrow_score = 1.0
+    elif fwhm_ms <= max_fwhm_ms:
+        narrow_score = ideal_fwhm_ms / fwhm_ms
     else:
-        narrow_score = max_fwhm_ms / fwhm_ms
+        narrow_score = ideal_fwhm_ms / fwhm_ms * 0.5  # extra penalty beyond hard limit
 
     # Symmetry score: direct ratio (already 0-1)
     sym_score = symmetry
 
-    # Weighted composite: shape matters more than raw amplitude
-    # 30% amplitude, 40% narrowness, 30% symmetry
-    score = 0.3 * amp_score + 0.4 * narrow_score + 0.3 * sym_score
+    # Weighted composite: shape dominates, amplitude is minor
+    # 20% amplitude, 40% narrowness, 40% symmetry
+    score = 0.2 * amp_score + 0.4 * narrow_score + 0.4 * sym_score
 
     return score
 
