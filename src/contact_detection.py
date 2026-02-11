@@ -2,12 +2,17 @@
 
 Tennis ball impacts produce a distinctive short thump (5-20ms) in the 1-4kHz
 range. This module uses pure audio signal processing to identify contact frames
-without any visual ball tracking.
+without any visual ball tracking. Peak shape analysis (FWHM and symmetry)
+distinguishes true impacts from shoe screeches and other court noise.
 """
 
 import numpy as np
 from typing import List, Tuple, Dict, Optional
-from .audio_detection import detect_contacts_audio, get_audio_envelope_for_debug
+from .audio_detection import (
+    detect_contacts_audio,
+    get_audio_envelope_for_debug,
+    get_all_candidates_for_debug,
+)
 
 
 def detect_contacts(
@@ -19,6 +24,7 @@ def detect_contacts(
     min_gap_ms: float = 300.0,
     noise_percentile: float = 75.0,
     peak_threshold_factor: float = 3.0,
+    max_impact_fwhm_ms: float = 40.0,
     debug: bool = False,
 ) -> List[Tuple[int, float, str]]:
     """Detect contact frames from audio track.
@@ -32,6 +38,8 @@ def detect_contacts(
         min_gap_ms: Minimum gap between contacts (ms).
         noise_percentile: Percentile of envelope used as noise floor.
         peak_threshold_factor: Peak must exceed noise floor by this factor.
+        max_impact_fwhm_ms: Expected max FWHM of a true ball impact (ms).
+            Peaks wider than this are penalized (likely shoe screeches).
         debug: Print debug information.
 
     Returns:
@@ -43,6 +51,7 @@ def detect_contacts(
         print(f"  Bandpass: {low_freq:.0f}-{high_freq:.0f} Hz")
         print(f"  Min gap: {min_gap_ms:.0f} ms")
         print(f"  Threshold: {noise_percentile}th percentile x {peak_threshold_factor}")
+        print(f"  Max impact FWHM: {max_impact_fwhm_ms:.0f} ms")
 
     try:
         peaks = detect_contacts_audio(
@@ -54,6 +63,7 @@ def detect_contacts(
             min_gap_ms=min_gap_ms,
             noise_percentile=noise_percentile,
             peak_threshold_factor=peak_threshold_factor,
+            max_impact_fwhm_ms=max_impact_fwhm_ms,
             debug=debug,
         )
     except Exception as e:
@@ -61,7 +71,6 @@ def detect_contacts(
             print(f"  Audio analysis failed: {e}")
         return []
 
-    # Convert to (frame, confidence, source) format
     contacts = [(frame, conf, 'audio') for frame, conf in peaks]
 
     if debug:
@@ -93,3 +102,31 @@ def get_debug_audio_data(
         'envelope': envelope,
         'duration_sec': len(raw_audio) / sr,
     }
+
+
+def get_debug_candidates(
+    video_path: str,
+    fps: float,
+    sample_rate: int = 22050,
+    low_freq: float = 1000.0,
+    high_freq: float = 4000.0,
+    noise_percentile: float = 75.0,
+    peak_threshold_factor: float = 3.0,
+    max_impact_fwhm_ms: float = 40.0,
+) -> List[dict]:
+    """Get all candidate peaks with shape metrics for debug visualization.
+
+    Returns:
+        List of dicts with keys: sample_idx, time_sec, frame, amplitude,
+        fwhm_ms, symmetry, score.
+    """
+    return get_all_candidates_for_debug(
+        video_path=video_path,
+        video_fps=fps,
+        sample_rate=sample_rate,
+        low_freq=low_freq,
+        high_freq=high_freq,
+        noise_percentile=noise_percentile,
+        peak_threshold_factor=peak_threshold_factor,
+        max_impact_fwhm_ms=max_impact_fwhm_ms,
+    )
