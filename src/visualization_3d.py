@@ -252,7 +252,8 @@ def create_contact_3d_figure(
                 gridcolor="#333",
                 color="#aaa",
             ),
-            aspectmode="data",
+            aspectmode="manual",
+            aspectratio=dict(x=1, y=2, z=1),
             camera=dict(
                 eye=dict(x=1.4, y=0.8, z=1.2),
                 up=dict(x=0, y=1, z=0),
