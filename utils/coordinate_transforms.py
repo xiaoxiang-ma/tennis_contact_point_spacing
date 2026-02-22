@@ -56,33 +56,3 @@ def apply_ground_plane(landmarks: Dict[str, np.ndarray], ground_z: float) -> Dic
     """
     offset = np.array([0.0, 0.0, ground_z])
     return {name: coords - offset for name, coords in landmarks.items()}
-
-
-def estimate_player_height_scale(landmarks: Dict[str, np.ndarray],
-                                  assumed_height_m: float = 1.78) -> float:
-    """Estimate a scale factor to convert normalized coords to meters.
-
-    Uses the distance from ankle midpoint to head as a proxy for height,
-    then scales to the assumed real-world height.
-
-    Args:
-        landmarks: Raw landmarks dict (before pelvis transform).
-        assumed_height_m: Assumed player height in meters.
-
-    Returns:
-        Scale factor (multiply normalized coords by this to get meters).
-    """
-    head = landmarks.get("head") or landmarks.get("nose")
-    left_ankle = landmarks.get("left_ankle")
-    right_ankle = landmarks.get("right_ankle")
-
-    if head is None or left_ankle is None or right_ankle is None:
-        return assumed_height_m  # fallback: treat normalized as meters
-
-    ankle_mid = (left_ankle + right_ankle) / 2.0
-    pixel_height = np.linalg.norm(head - ankle_mid)
-
-    if pixel_height < 1e-6:
-        return assumed_height_m
-
-    return assumed_height_m / pixel_height
