@@ -21,7 +21,6 @@ def analyze_contact_window(
     contact_frame: int,
     fps: float,
     pose_estimator,
-    shot_type: str,
     window_frames: int = 5,
 ) -> dict:
     """Analyze a ±window_frames window around contact_frame.
@@ -31,13 +30,13 @@ def analyze_contact_window(
         contact_frame:  Detected contact frame index.
         fps:            Video frame rate.
         pose_estimator: PoseEstimator instance (reuse from caller).
-        shot_type:      'right_forehand' | 'right_backhand' | 'left_forehand' | 'left_backhand'.
         window_frames:  Half-width of analysis window (default 5).
 
     Returns dict with keys:
         landmarks_3d      : smoothed world landmarks (dict name -> np.array(3,))
         raw_result        : mediapipe result from the contact frame
         swing_velocity    : np.array(3,) — wrist swing direction (unit vector)
+        striking_side     : 'right' | 'left' — auto-detected from wrist extension
         racket_geometry   : dict with head_center, face_normal, right, up_r,
                             handle_start, handle_end, elbow
         ball_contact_3d   : np.array(3,) | None — 3D contact point on racket face
@@ -45,8 +44,6 @@ def analyze_contact_window(
         detection_quality : 'good' | 'partial' | 'fallback'
     """
     num_frames = len(frames)
-    wrist_key = "right_wrist" if shot_type.startswith("right") else "left_wrist"
-    elbow_key = "right_elbow" if shot_type.startswith("right") else "left_elbow"
 
     start = max(0, contact_frame - window_frames)
     end   = min(num_frames - 1, contact_frame + window_frames)
@@ -68,25 +65,38 @@ def analyze_contact_window(
     smoothed = _smooth_landmarks(all_landmarks, frame_indices)
 
     # ------------------------------------------------------------------
-    # 2. Swing velocity: wrist displacement over a ±2 frame sub-window
-    # ------------------------------------------------------------------
-    swing_velocity = _compute_swing_velocity(all_landmarks, contact_frame, wrist_key)
-
-    # ------------------------------------------------------------------
-    # 3. Racket geometry
+    # 2. Auto-detect striking side: whichever wrist is further from pelvis
     # ------------------------------------------------------------------
     if smoothed is None:
-        # No pose at all — return minimal result
         return {
             "landmarks_3d": {},
             "raw_result": contact_raw_result,
             "swing_velocity": np.array([0.0, 0.0, 1.0]),
+            "striking_side": "right",
             "racket_geometry": None,
             "ball_contact_3d": None,
             "ball_detections": [],
             "detection_quality": "fallback",
         }
 
+    pelvis = smoothed.get("pelvis", np.zeros(3))
+    rw_dist = np.linalg.norm(smoothed.get("right_wrist", pelvis) - pelvis)
+    lw_dist = np.linalg.norm(smoothed.get("left_wrist",  pelvis) - pelvis)
+    if rw_dist >= lw_dist:
+        striking_side = "right"
+        wrist_key, elbow_key = "right_wrist", "right_elbow"
+    else:
+        striking_side = "left"
+        wrist_key, elbow_key = "left_wrist", "left_elbow"
+
+    # ------------------------------------------------------------------
+    # 3. Swing velocity: wrist displacement over a ±2 frame sub-window
+    # ------------------------------------------------------------------
+    swing_velocity = _compute_swing_velocity(all_landmarks, contact_frame, wrist_key)
+
+    # ------------------------------------------------------------------
+    # 4. Racket geometry
+    # ------------------------------------------------------------------
     racket_geometry = _build_racket_geometry(smoothed, swing_velocity, wrist_key, elbow_key)
 
     # ------------------------------------------------------------------
@@ -112,6 +122,7 @@ def analyze_contact_window(
         "landmarks_3d": smoothed,
         "raw_result": contact_raw_result,
         "swing_velocity": swing_velocity,
+        "striking_side": striking_side,
         "racket_geometry": racket_geometry,
         "ball_contact_3d": ball_contact_3d,
         "ball_detections": ball_detections,
