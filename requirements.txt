@@ -14,3 +14,6 @@ scipy>=1.10.0
 # Utilities
 tqdm
 Pillow>=9.0.0
+
+# Interactive 3D visualization
+plotly>=5.0.0
