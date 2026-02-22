@@ -210,6 +210,20 @@ def create_contact_3d_figure(
         f"Frame {frame_num} | {time_sec:.2f}s | Confidence {confidence:.0%} | {quality_label}"
     )
 
+    # --- Debug ---
+    print(f"[3D] traces={len(traces)} | landmarks={len(landmarks)} | racket={'yes' if racket else 'NONE'} | ball={'yes' if ball_3d is not None else 'none'}")
+    if landmarks:
+        all_d = [_to_display(np.asarray(v)) for v in landmarks.values()]
+        xs = [p[0] for p in all_d]; ys = [p[1] for p in all_d]; zs = [p[2] for p in all_d]
+        print(f"[3D] Display coord ranges: x=[{min(xs):.3f}, {max(xs):.3f}]  y=[{min(ys):.3f}, {max(ys):.3f}]  z=[{min(zs):.3f}, {max(zs):.3f}]")
+    if racket:
+        hc = _to_display(racket['head_center'])
+        fn = _to_display(racket['face_normal'])
+        print(f"[3D] Racket head_center(display)=({hc[0]:.3f}, {hc[1]:.3f}, {hc[2]:.3f})  face_normal=({fn[0]:.3f}, {fn[1]:.3f}, {fn[2]:.3f})")
+    if ball_3d is not None:
+        bdisp = _to_display(ball_3d)
+        print(f"[3D] Ball(display)=({bdisp[0]:.3f}, {bdisp[1]:.3f}, {bdisp[2]:.3f})")
+
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=dict(
