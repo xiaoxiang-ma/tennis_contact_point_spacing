@@ -31,3 +31,19 @@ Thumbs.db
 # Env
 .env
 venv/
+
+# Xcode
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcarchive
+*.ipa
+*.dSYM/
+*.dSYM.zip
+
+# Swift Package Manager
+.build/
+.swiftpm/configuration/
+
+# CocoaPods (not used, but common in iOS projects)
+Pods/
