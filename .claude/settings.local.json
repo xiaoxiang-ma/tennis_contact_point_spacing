@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(pip show:*)",
+      "WebSearch",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "WebFetch(domain:plotly.github.io)",
+      "WebFetch(domain:plotly.com)",
+      "WebFetch(domain:ai.google.dev)",
+      "Bash(python3:*)",
+      "Bash(echo checking file directly:*)",
+      "Bash(cd:*)",
+      "Bash(node:*)"
+    ]
+  }
+}
