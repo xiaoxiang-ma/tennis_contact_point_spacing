@@ -1,0 +1,575 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		AA000101000000000000AA01 /* TennisContactApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000101000000000000BB01 /* TennisContactApp.swift */; };
+		AA000102000000000000AA01 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000102000000000000BB01 /* ContentView.swift */; };
+		AA000103000000000000AA01 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000103000000000000BB01 /* OnboardingView.swift */; };
+		AA000104000000000000AA01 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000104000000000000BB01 /* HomeView.swift */; };
+		AA000105000000000000AA01 /* SessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000105000000000000BB01 /* SessionView.swift */; };
+		AA000106000000000000AA01 /* ShotDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000106000000000000BB01 /* ShotDetailView.swift */; };
+		AA000107000000000000AA01 /* StatisticsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000107000000000000BB01 /* StatisticsView.swift */; };
+		AA000108000000000000AA01 /* AudioDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000108000000000000BB01 /* AudioDetector.swift */; };
+		AA000109000000000000AA01 /* PoseEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000109000000000000BB01 /* PoseEstimator.swift */; };
+		AA00010A000000000000AA01 /* CoordinateTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010A000000000000BB01 /* CoordinateTransform.swift */; };
+		AA00010B000000000000AA01 /* StatisticsEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010B000000000000BB01 /* StatisticsEngine.swift */; };
+		AA00010C000000000000AA01 /* ProcessingPipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010C000000000000BB01 /* ProcessingPipeline.swift */; };
+		AA00010D000000000000AA01 /* SkeletonRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010D000000000000BB01 /* SkeletonRenderer.swift */; };
+		AA00010E000000000000AA01 /* ArcOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010E000000000000BB01 /* ArcOverlay.swift */; };
+		AA00010F000000000000AA01 /* Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB00010F000000000000BB01 /* Session.swift */; };
+		AA000110000000000000AA01 /* Shot.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000110000000000000BB01 /* Shot.swift */; };
+		AA000111000000000000AA01 /* ContactCandidate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000111000000000000BB01 /* ContactCandidate.swift */; };
+		AA000112000000000000AA01 /* TennisContact.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BB000112000000000000BB01 /* TennisContact.xcdatamodeld */; };
+		AA000113000000000000AA01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000113000000000000BB01 /* Assets.xcassets */; };
+		AA000114000000000000AA01 /* TennisContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000114000000000000BB01 /* TennisContactTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CC000201000000000000CC01 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = DD000001000000000000DD01 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = EE000101000000000000EE01;
+			remoteInfo = TennisContact;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		BB000101000000000000BB01 /* TennisContactApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisContactApp.swift; sourceTree = "<group>"; };
+		BB000102000000000000BB01 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		BB000103000000000000BB01 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		BB000104000000000000BB01 /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		BB000105000000000000BB01 /* SessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionView.swift; sourceTree = "<group>"; };
+		BB000106000000000000BB01 /* ShotDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotDetailView.swift; sourceTree = "<group>"; };
+		BB000107000000000000BB01 /* StatisticsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
+		BB000108000000000000BB01 /* AudioDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDetector.swift; sourceTree = "<group>"; };
+		BB000109000000000000BB01 /* PoseEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PoseEstimator.swift; sourceTree = "<group>"; };
+		BB00010A000000000000BB01 /* CoordinateTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateTransform.swift; sourceTree = "<group>"; };
+		BB00010B000000000000BB01 /* StatisticsEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsEngine.swift; sourceTree = "<group>"; };
+		BB00010C000000000000BB01 /* ProcessingPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessingPipeline.swift; sourceTree = "<group>"; };
+		BB00010D000000000000BB01 /* SkeletonRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkeletonRenderer.swift; sourceTree = "<group>"; };
+		BB00010E000000000000BB01 /* ArcOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArcOverlay.swift; sourceTree = "<group>"; };
+		BB00010F000000000000BB01 /* Session.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Session.swift; sourceTree = "<group>"; };
+		BB000110000000000000BB01 /* Shot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shot.swift; sourceTree = "<group>"; };
+		BB000111000000000000BB01 /* ContactCandidate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactCandidate.swift; sourceTree = "<group>"; };
+		BB000112000000000000BB01 /* TennisContact.xcdatamodeld */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcdatamodeld; path = TennisContact.xcdatamodeld; sourceTree = "<group>"; };
+		BB000113000000000000BB01 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		BB000114000000000000BB01 /* TennisContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisContactTests.swift; sourceTree = "<group>"; };
+		BB000115000000000000BB01 /* TennisContact.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TennisContact.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB000116000000000000BB01 /* TennisContactTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TennisContactTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		DD000201000000000000DD01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD000202000000000000DD01 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		CC000101000000000000CC01 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BB000115000000000000BB01 /* TennisContact.app */,
+				BB000116000000000000BB01 /* TennisContactTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CC000102000000000000CC01 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				BB000101000000000000BB01 /* TennisContactApp.swift */,
+				BB000102000000000000BB01 /* ContentView.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		CC000103000000000000CC01 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				BB000103000000000000BB01 /* OnboardingView.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		CC000104000000000000CC01 /* Session */ = {
+			isa = PBXGroup;
+			children = (
+				BB000104000000000000BB01 /* HomeView.swift */,
+				BB000105000000000000BB01 /* SessionView.swift */,
+				BB000106000000000000BB01 /* ShotDetailView.swift */,
+				BB000107000000000000BB01 /* StatisticsView.swift */,
+			);
+			path = Session;
+			sourceTree = "<group>";
+		};
+		CC000105000000000000CC01 /* Processing */ = {
+			isa = PBXGroup;
+			children = (
+				BB000108000000000000BB01 /* AudioDetector.swift */,
+				BB000109000000000000BB01 /* PoseEstimator.swift */,
+				BB00010A000000000000BB01 /* CoordinateTransform.swift */,
+				BB00010B000000000000BB01 /* StatisticsEngine.swift */,
+				BB00010C000000000000BB01 /* ProcessingPipeline.swift */,
+			);
+			path = Processing;
+			sourceTree = "<group>";
+		};
+		CC000106000000000000CC01 /* Rendering */ = {
+			isa = PBXGroup;
+			children = (
+				BB00010D000000000000BB01 /* SkeletonRenderer.swift */,
+				BB00010E000000000000BB01 /* ArcOverlay.swift */,
+			);
+			path = Rendering;
+			sourceTree = "<group>";
+		};
+		CC000107000000000000CC01 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				BB00010F000000000000BB01 /* Session.swift */,
+				BB000110000000000000BB01 /* Shot.swift */,
+				BB000111000000000000BB01 /* ContactCandidate.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		CC000108000000000000CC01 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				BB000112000000000000BB01 /* TennisContact.xcdatamodeld */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		CC000109000000000000CC01 /* TennisContact */ = {
+			isa = PBXGroup;
+			children = (
+				CC000102000000000000CC01 /* App */,
+				CC000103000000000000CC01 /* Onboarding */,
+				CC000104000000000000CC01 /* Session */,
+				CC000105000000000000CC01 /* Processing */,
+				CC000106000000000000CC01 /* Rendering */,
+				CC000107000000000000CC01 /* Models */,
+				CC000108000000000000CC01 /* Resources */,
+				BB000113000000000000BB01 /* Assets.xcassets */,
+			);
+			path = TennisContact;
+			sourceTree = "<group>";
+		};
+		CC00010A000000000000CC01 /* TennisContactTests */ = {
+			isa = PBXGroup;
+			children = (
+				BB000114000000000000BB01 /* TennisContactTests.swift */,
+			);
+			path = TennisContactTests;
+			sourceTree = "<group>";
+		};
+		CC00010B000000000000CC01 = {
+			isa = PBXGroup;
+			children = (
+				CC000109000000000000CC01 /* TennisContact */,
+				CC00010A000000000000CC01 /* TennisContactTests */,
+				CC000101000000000000CC01 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		EE000101000000000000EE01 /* TennisContact */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FF000101000000000000FF01 /* Build configuration list for PBXNativeTarget "TennisContact" */;
+			buildPhases = (
+				DD000101000000000000DD01 /* Sources */,
+				DD000201000000000000DD01 /* Frameworks */,
+				DD000301000000000000DD01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TennisContact;
+			productName = TennisContact;
+			productReference = BB000115000000000000BB01 /* TennisContact.app */;
+			productType = "com.apple.product-type.application";
+		};
+		EE000102000000000000EE01 /* TennisContactTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FF000102000000000000FF01 /* Build configuration list for PBXNativeTarget "TennisContactTests" */;
+			buildPhases = (
+				DD000102000000000000DD01 /* Sources */,
+				DD000202000000000000DD01 /* Frameworks */,
+				DD000302000000000000DD01 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				CC000202000000000000CC01 /* PBXTargetDependency */,
+			);
+			name = TennisContactTests;
+			productName = TennisContactTests;
+			productReference = BB000116000000000000BB01 /* TennisContactTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		DD000001000000000000DD01 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					EE000101000000000000EE01 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					EE000102000000000000EE01 = {
+						CreatedOnToolsVersion = 15.0;
+						TestTargetID = EE000101000000000000EE01;
+					};
+				};
+			};
+			buildConfigurationList = FF000103000000000000FF01 /* Build configuration list for PBXProject "TennisContact" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = CC00010B000000000000CC01;
+			productRefGroup = CC000101000000000000CC01 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				EE000101000000000000EE01 /* TennisContact */,
+				EE000102000000000000EE01 /* TennisContactTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		DD000301000000000000DD01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000113000000000000AA01 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD000302000000000000DD01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DD000101000000000000DD01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000101000000000000AA01 /* TennisContactApp.swift in Sources */,
+				AA000102000000000000AA01 /* ContentView.swift in Sources */,
+				AA000103000000000000AA01 /* OnboardingView.swift in Sources */,
+				AA000104000000000000AA01 /* HomeView.swift in Sources */,
+				AA000105000000000000AA01 /* SessionView.swift in Sources */,
+				AA000106000000000000AA01 /* ShotDetailView.swift in Sources */,
+				AA000107000000000000AA01 /* StatisticsView.swift in Sources */,
+				AA000108000000000000AA01 /* AudioDetector.swift in Sources */,
+				AA000109000000000000AA01 /* PoseEstimator.swift in Sources */,
+				AA00010A000000000000AA01 /* CoordinateTransform.swift in Sources */,
+				AA00010B000000000000AA01 /* StatisticsEngine.swift in Sources */,
+				AA00010C000000000000AA01 /* ProcessingPipeline.swift in Sources */,
+				AA00010D000000000000AA01 /* SkeletonRenderer.swift in Sources */,
+				AA00010E000000000000AA01 /* ArcOverlay.swift in Sources */,
+				AA00010F000000000000AA01 /* Session.swift in Sources */,
+				AA000110000000000000AA01 /* Shot.swift in Sources */,
+				AA000111000000000000AA01 /* ContactCandidate.swift in Sources */,
+				AA000112000000000000AA01 /* TennisContact.xcdatamodeld in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		DD000102000000000000DD01 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000114000000000000AA01 /* TennisContactTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		CC000202000000000000CC01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = EE000101000000000000EE01 /* TennisContact */;
+			targetProxy = CC000201000000000000CC01 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		FF000201000000000000FF01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		FF000202000000000000FF01 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		FF000203000000000000FF01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tennis Contact";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tenniscontact.TennisContact;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		FF000204000000000000FF01 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Tennis Contact";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tenniscontact.TennisContact;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		FF000205000000000000FF01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tenniscontact.TennisContactTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TennisContact.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TennisContact";
+			};
+			name = Debug;
+		};
+		FF000206000000000000FF01 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.tenniscontact.TennisContactTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TennisContact.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/TennisContact";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		FF000101000000000000FF01 /* Build configuration list for PBXNativeTarget "TennisContact" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF000203000000000000FF01 /* Debug */,
+				FF000204000000000000FF01 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FF000102000000000000FF01 /* Build configuration list for PBXNativeTarget "TennisContactTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF000205000000000000FF01 /* Debug */,
+				FF000206000000000000FF01 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FF000103000000000000FF01 /* Build configuration list for PBXProject "TennisContact" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FF000201000000000000FF01 /* Debug */,
+				FF000202000000000000FF01 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = DD000001000000000000DD01 /* Project object */;
+}

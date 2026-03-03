@@ -1,0 +1,25 @@
+name: iOS Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project ios/TennisContact.xcodeproj \
+            -scheme TennisContact \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            build
+
+      - name: Test
+        run: |
+          xcodebuild \
+            -project ios/TennisContact.xcodeproj \
+            -scheme TennisContact \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            test
