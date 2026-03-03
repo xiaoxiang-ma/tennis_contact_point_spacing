@@ -28,6 +28,7 @@
 		AA000113000000000000AA01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000113000000000000BB01 /* Assets.xcassets */; };
 		AA000114000000000000AA01 /* TennisContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000114000000000000BB01 /* TennisContactTests.swift */; };
 		AA000120000000000000AA01 /* AudioDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000120000000000000BB01 /* AudioDetectorTests.swift */; };
+		AA000121000000000000AA01 /* CoordinateTransformTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000121000000000000BB01 /* CoordinateTransformTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +65,7 @@
 		BB000115000000000000BB01 /* TennisContact.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TennisContact.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000116000000000000BB01 /* TennisContactTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TennisContactTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000120000000000000BB01 /* AudioDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDetectorTests.swift; sourceTree = "<group>"; };
+		BB000121000000000000BB01 /* CoordinateTransformTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateTransformTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -180,6 +182,7 @@
 			children = (
 				BB000114000000000000BB01 /* TennisContactTests.swift */,
 				BB000120000000000000BB01 /* AudioDetectorTests.swift */,
+				BB000121000000000000BB01 /* CoordinateTransformTests.swift */,
 			);
 			path = TennisContactTests;
 			sourceTree = "<group>";
@@ -319,6 +322,7 @@
 			files = (
 				AA000114000000000000AA01 /* TennisContactTests.swift in Sources */,
 				AA000120000000000000AA01 /* AudioDetectorTests.swift in Sources */,
+				AA000121000000000000AA01 /* CoordinateTransformTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
