@@ -14,8 +14,11 @@
 //   .leftWrist    / .rightWrist    → "left_wrist"    / "right_wrist"
 //   .leftHip      / .rightHip     → "left_hip"      / "right_hip"
 //   .root                          → "root"
-//   .head                          → "head"
 //   (synthetic) midpoint of hips   → "pelvis"  (mirrors Python _add_synthetic())
+//
+// NOTE: VNHumanBodyRecognizedPoint3D has no .confidence property (unlike the
+// 2D VNRecognizedPoint). Best-frame selection uses joint count as the quality
+// proxy instead.
 //
 // NOTE: VNDetectHumanBodyPose3DRequest returns metric-space coordinates on
 // LiDAR devices (iPhone 12 Pro+) and relative coordinates on all others.
@@ -42,7 +45,6 @@ struct PoseEstimator {
         .leftHip:        "left_hip",
         .rightHip:       "right_hip",
         .root:           "root",
-        .head:           "head",
         .centerShoulder: "neck",
     ]
 
@@ -92,18 +94,18 @@ struct PoseEstimator {
         // Extract all frames in one batch call
         let frames = await extractFrames(generator: generator, times: times)
 
-        // Run pose on each frame; keep the one with highest total joint confidence
+        // Run pose on each frame; keep the one with the most joints detected
         var bestJoints: [String: SIMD3<Float>] = [:]
-        var bestConfidence: Float = -1
+        var bestQuality: Float = -1
         var bestFrameIndex = contact.frameIndex
 
         for (i, (_, cgImage)) in frames.enumerated() {
             guard let image = cgImage else { continue }
-            let (joints, confidence) = runPose(on: image)
-            if confidence > bestConfidence {
-                bestConfidence  = confidence
-                bestJoints      = joints
-                bestFrameIndex  = windowIndices[i]
+            let (joints, quality) = runPose(on: image)
+            if quality > bestQuality {
+                bestQuality    = quality
+                bestJoints     = joints
+                bestFrameIndex = windowIndices[i]
             }
         }
 
@@ -147,7 +149,10 @@ struct PoseEstimator {
     // MARK: - Pose inference
 
     /// Run VNDetectHumanBodyPose3DRequest on a single CGImage.
-    /// Returns (joints, totalConfidence). joints is empty if no person detected.
+    /// Returns (joints, quality). quality = number of joints detected; used to
+    /// pick the best frame in the ±5-frame window. joints is empty if no person
+    /// is detected. VNHumanBodyRecognizedPoint3D has no confidence property so
+    /// joint count is used as the quality proxy.
     private func runPose(on image: CGImage) -> ([String: SIMD3<Float>], Float) {
         let request = VNDetectHumanBodyPose3DRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
@@ -161,15 +166,12 @@ struct PoseEstimator {
         guard let observation = request.results?.first else { return ([:], 0) }
 
         var joints: [String: SIMD3<Float>] = [:]
-        var totalConfidence: Float = 0
 
         for (visionName, key) in Self.jointKeyMap {
-            guard let joint = try? observation.recognizedPoint(visionName),
-                  joint.confidence > 0.1 else { continue }
+            guard let joint = try? observation.recognizedPoint(visionName) else { continue }
             // The 4×4 position matrix: translation is in column 3
             let col = joint.position.columns.3
             joints[key] = SIMD3<Float>(col.x, col.y, col.z)
-            totalConfidence += joint.confidence
         }
 
         // Synthesise pelvis = midpoint of hips (mirrors Python's _add_synthetic())
@@ -177,6 +179,6 @@ struct PoseEstimator {
             joints["pelvis"] = (l + r) * 0.5
         }
 
-        return (joints, totalConfidence)
+        return (joints, Float(joints.count))
     }
 }
