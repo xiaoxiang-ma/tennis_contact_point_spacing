@@ -27,6 +27,7 @@
 		AA000112000000000000AA01 /* TennisContact.xcdatamodeld in Sources */ = {isa = PBXBuildFile; fileRef = BB000112000000000000BB01 /* TennisContact.xcdatamodeld */; };
 		AA000113000000000000AA01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000113000000000000BB01 /* Assets.xcassets */; };
 		AA000114000000000000AA01 /* TennisContactTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000114000000000000BB01 /* TennisContactTests.swift */; };
+		AA000120000000000000AA01 /* AudioDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000120000000000000BB01 /* AudioDetectorTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -62,6 +63,7 @@
 		BB000114000000000000BB01 /* TennisContactTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TennisContactTests.swift; sourceTree = "<group>"; };
 		BB000115000000000000BB01 /* TennisContact.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TennisContact.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB000116000000000000BB01 /* TennisContactTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = TennisContactTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		BB000120000000000000BB01 /* AudioDetectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDetectorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -177,6 +179,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000114000000000000BB01 /* TennisContactTests.swift */,
+				BB000120000000000000BB01 /* AudioDetectorTests.swift */,
 			);
 			path = TennisContactTests;
 			sourceTree = "<group>";
@@ -315,6 +318,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000114000000000000AA01 /* TennisContactTests.swift in Sources */,
+				AA000120000000000000AA01 /* AudioDetectorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
