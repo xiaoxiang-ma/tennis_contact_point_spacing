@@ -62,6 +62,12 @@ struct AudioDetector {
     var envelopeWindowMs: Float = 5.0
     /// Deduplication window for raw peak candidates (ms).
     var deduplicationMs: Float = 20.0
+    /// Minimum absolute envelope amplitude for a peak to be considered.
+    /// Prevents filter startup transients and floating-point noise from being
+    /// detected when the noise floor is near zero (e.g. in unit tests with
+    /// synthetic signals). Mirrors Python's optional min_peak_height parameter.
+    /// Set to 0 to rely purely on the adaptive threshold.
+    var minimumAbsoluteThreshold: Float = 1e-4
 
     // Scoring weights (20 / 40 / 40 — must match Python exactly)
     static let wAmplitude: Float  = 0.20
@@ -308,11 +314,14 @@ struct AudioDetector {
     ) -> [ContactCandidate] {
         guard envelope.count > 2 else { return [] }
 
-        // Adaptive threshold: noise_percentile × threshold_factor
+        // Adaptive threshold: noise_percentile × threshold_factor,
+        // floored by minimumAbsoluteThreshold to prevent filter startup
+        // transients (~1e-5) from being detected when the noise floor is
+        // near zero (matches Python's optional min_peak_height parameter).
         let sorted = envelope.sorted()
         let pctIdx = Int(Float(sorted.count - 1) * noisePercentile / 100.0)
         let noiseFloor = sorted[pctIdx]
-        let threshold = noiseFloor * thresholdFactor
+        let threshold = max(noiseFloor * thresholdFactor, minimumAbsoluteThreshold)
 
         // Stage 1: candidates — local maxima above threshold, 20 ms dedup
         let dedupSamples = max(1, Int(sampleRate * Double(deduplicationMs) / 1000.0))
