@@ -110,10 +110,11 @@ struct PoseEstimator {
         }
 
         return ProcessedShot(
-            timestamp:       Double(bestFrameIndex) / frameRate,
-            frameIndex:      bestFrameIndex,
-            audioConfidence: contact.confidence,
-            joints:          bestJoints
+            timestamp:         Double(bestFrameIndex) / frameRate,
+            frameIndex:        bestFrameIndex,
+            audioConfidence:   contact.confidence,
+            joints:            bestJoints,
+            transformedJoints: [:]   // filled in by ProcessingPipeline Stage 4
         )
     }
 

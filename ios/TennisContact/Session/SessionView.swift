@@ -186,11 +186,19 @@ struct SessionView: View {
             let withJoints = processedShots.filter { !$0.joints.isEmpty }.count
             LabeledContent("Pose estimated", value: "\(withJoints) / \(processedShots.count)")
 
-            // TODO (Task 8): navigate to ShotDetailView
+            if let url = videoURL, !processedShots.isEmpty {
+                let side = DominantSide(
+                    rawValue: UserDefaults.standard.string(forKey: "dominantSide")
+                              ?? DominantSide.right.rawValue
+                ) ?? .right
+
+                ForEach(Array(processedShots.enumerated()), id: \.offset) { i, shot in
+                    NavigationLink("View Shot \(i + 1)") {
+                        ShotDetailView(shot: shot, videoURL: url, dominantSide: side)
+                    }
+                }
+            }
             // TODO (Task 11): navigate to StatisticsView
-            Text("Detailed views coming in the next update.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
     }
 

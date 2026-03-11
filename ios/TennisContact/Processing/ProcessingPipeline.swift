@@ -29,8 +29,10 @@ struct ProcessedShot {
     /// Confidence score from AudioDetector (0.4–1.0).
     let audioConfidence: Float
     /// Raw joint positions in Vision camera space, keyed by joint name.
-    /// Transform to pelvis-relative coordinates in Task 6 (CoordinateTransform).
     let joints: [String: SIMD3<Float>]
+    /// Pelvis-centred, ground-adjusted joint positions (CoordinateTransform output).
+    /// Coordinate system: X = lateral (dominant side positive), Y = up, Z = toward camera.
+    let transformedJoints: [String: SIMD3<Float>]
 }
 
 // MARK: - PipelineEvent
@@ -127,13 +129,30 @@ actor ProcessingPipeline {
                         frameRate: frameRate
                     )
 
-                    // ── Stage 4: statistics (placeholder until Task 10) ──────
+                    // ── Stage 4: coordinate transform + statistics ───────────
                     continuation.yield(.stage(.computingStatistics))
+
+                    let sideRaw = UserDefaults.standard.string(forKey: "dominantSide")
+                                  ?? DominantSide.right.rawValue
+                    let side = DominantSide(rawValue: sideRaw) ?? .right
+
+                    let transformedShots: [ProcessedShot] = shots.map { shot in
+                        var j = CoordinateTransform.pelvisOriginTransform(
+                            shot.joints, dominantSide: side)
+                        let groundY = CoordinateTransform.estimateGroundPlane(joints: j)
+                        j = CoordinateTransform.applyGroundPlane(joints: j, groundY: groundY)
+                        return ProcessedShot(
+                            timestamp:        shot.timestamp,
+                            frameIndex:       shot.frameIndex,
+                            audioConfidence:  shot.audioConfidence,
+                            joints:           shot.joints,
+                            transformedJoints: j
+                        )
+                    }
                     // StatisticsEngine.compute(shots:) wired in Task 10.
-                    // CoordinateTransform applied in Task 6.
 
                     // ── Done ─────────────────────────────────────────────────
-                    continuation.yield(.completed(shots))
+                    continuation.yield(.completed(transformedShots))
                     continuation.yield(.stage(.complete))
                     continuation.finish()
 
