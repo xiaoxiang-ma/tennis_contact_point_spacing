@@ -5,16 +5,19 @@
 // contact ring overlay) and a draggable 3D skeleton on the right (SceneKit).
 //
 // Left panel:  VideoPlayer (AVKit) with ArcOverlay CAShapeLayer showing the
-//              dominant wrist contact position as a glowing orange ring.
-// Right panel: SkeletonRenderer with joint positions from transformedJoints.
+//              dominant wrist position as a glowing orange ring derived from the
+//              Vision 2D landmark (no projection math — exact pixel position).
+// Right panel: SkeletonRenderer animated in sync with the video via a periodic
+//              time observer that updates joint positions each frame.
 //
-// The video seeks to 1 second before the contact timestamp on appear so the
-// contact moment is visible shortly after playback begins.
+// Windowed looping: AVQueuePlayer + AVPlayerLooper clips to ±10 frames around the
+// contact timestamp and loops that window continuously.
+//
+// Tap the video panel to toggle play/pause. Both sides pause/resume together.
 //
 // See docs/implementation_v3.md Section 2.3 and Task 8
 
 import AVKit
-import SceneKit
 import SwiftUI
 import simd
 
@@ -25,13 +28,34 @@ struct ShotDetailView: View {
     let videoURL: URL
     let dominantSide: DominantSide
 
-    @State private var player: AVPlayer
+    // AVQueuePlayer + looper for windowed looping
+    @State private var player: AVQueuePlayer
+    @State private var looper: AVPlayerLooper?
+
+    // Skeleton animation state — driven by periodic time observer
+    @State private var currentJoints: [String: SIMD3<Float>] = [:]
+    @State private var timeObserverToken: Any?
+
+    // MARK: - Init
 
     init(shot: ProcessedShot, videoURL: URL, dominantSide: DominantSide) {
         self.shot = shot
         self.videoURL = videoURL
         self.dominantSide = dominantSide
-        _player = State(initialValue: AVPlayer(url: videoURL))
+
+        // Window: ±10 frames around the contact timestamp
+        let fps         = shot.frameRate > 0 ? shot.frameRate : 30.0
+        let windowSecs  = 10.0 / fps
+        let windowStart = max(0, shot.timestamp - windowSecs)
+        let windowEnd   = shot.timestamp + windowSecs
+
+        let item = AVPlayerItem(url: videoURL)
+        item.forwardPlaybackEndTime  = CMTime(seconds: windowEnd,   preferredTimescale: 600)
+        item.reversePlaybackEndTime  = CMTime(seconds: windowStart, preferredTimescale: 600)
+
+        let queuePlayer = AVQueuePlayer(playerItem: item)
+        _player = State(initialValue: queuePlayer)
+        _looper = State(initialValue: AVPlayerLooper(player: queuePlayer, templateItem: item))
     }
 
     // MARK: - Body
@@ -50,12 +74,8 @@ struct ShotDetailView: View {
         }
         .navigationTitle(shotTitle)
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            let seekSeconds = max(0, shot.timestamp - 1.0)
-            let seekTime = CMTime(seconds: seekSeconds, preferredTimescale: 600)
-            player.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        }
-        .onDisappear { player.pause() }
+        .onAppear { setupPlayback() }
+        .onDisappear { teardownPlayback() }
     }
 
     // MARK: - Sub-views
@@ -65,9 +85,9 @@ struct ShotDetailView: View {
             VideoPlayer(player: player)
                 .onTapGesture { togglePlayback() }
 
-            // Arc overlay — contact ring drawn over dominant wrist position
-            if let wristPos = wristPosition {
-                ArcOverlayRepresentable(wristPosition: wristPos)
+            // Contact ring — position from Vision 2D landmark (no projection)
+            if let pt = shot.wristImagePoint {
+                ArcOverlayRepresentable(imagePoint: pt)
                     .allowsHitTesting(false)
             }
         }
@@ -76,12 +96,13 @@ struct ShotDetailView: View {
     private var skeletonPanel: some View {
         VStack(spacing: 0) {
             SkeletonRenderer(
-                joints: shot.transformedJoints,
+                joints: currentJoints.isEmpty ? shot.transformedJoints : currentJoints,
                 dominantSide: dominantSide
             )
 
-            // Contact stats bar
-            if let wristPos = wristPosition {
+            // Per-shot stats bar
+            if let wristPos = wristPosition(from: currentJoints.isEmpty
+                                             ? shot.transformedJoints : currentJoints) {
                 contactStatsBar(wrist: wristPos)
             }
         }
@@ -89,7 +110,7 @@ struct ShotDetailView: View {
 
     private func contactStatsBar(wrist: SIMD3<Float>) -> some View {
         HStack(spacing: 0) {
-            statCell(label: "Forward",  value: wrist.x * 100)
+            statCell(label: "Forward",  value: wrist.z * 100)
             Divider().frame(height: 36)
             statCell(label: "Lateral",  value: wrist.x * 100)
             Divider().frame(height: 36)
@@ -111,18 +132,41 @@ struct ShotDetailView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Helpers
+    // MARK: - Lifecycle
 
-    private var wristPosition: SIMD3<Float>? {
-        let key = dominantSide == .right ? "right_wrist" : "left_wrist"
-        return shot.transformedJoints[key]
+    private func setupPlayback() {
+        let fps = shot.frameRate > 0 ? shot.frameRate : 30.0
+        let windowSecs = 10.0 / fps
+        let windowStart = max(0, shot.timestamp - windowSecs)
+
+        // Seek to window start then play
+        let seekTime = CMTime(seconds: windowStart, preferredTimescale: 600)
+        player.seek(to: seekTime, toleranceBefore: .zero, toleranceAfter: .zero) { _ in
+            self.player.play()
+        }
+
+        // Start with the contact-frame skeleton
+        currentJoints = shot.transformedJoints
+
+        // Periodic observer: update skeleton joints each video frame
+        let interval = CMTime(value: 1, timescale: CMTimeScale(fps))
+        timeObserverToken = player.addPeriodicTimeObserver(
+            forInterval: interval, queue: .main
+        ) { [fps] time in
+            let fi = Int((time.seconds * fps).rounded())
+            if let frame = shot.windowFrames.first(where: { $0.frameIndex == fi }),
+               !frame.rawJoints.isEmpty {
+                currentJoints = frame.rawJoints
+            }
+        }
     }
 
-    private var shotTitle: String {
-        let t = shot.timestamp
-        let m = Int(t) / 60
-        let s = Int(t) % 60
-        return m > 0 ? "Shot at \(m):\(String(format: "%02d", s))" : "Shot at 0:\(String(format: "%02d", s))"
+    private func teardownPlayback() {
+        if let token = timeObserverToken {
+            player.removeTimeObserver(token)
+            timeObserverToken = nil
+        }
+        player.pause()
     }
 
     private func togglePlayback() {
@@ -132,23 +176,38 @@ struct ShotDetailView: View {
             player.play()
         }
     }
+
+    // MARK: - Helpers
+
+    private func wristPosition(from joints: [String: SIMD3<Float>]) -> SIMD3<Float>? {
+        let key = dominantSide == .right ? "right_wrist" : "left_wrist"
+        return joints[key]
+    }
+
+    private var shotTitle: String {
+        let t = shot.timestamp
+        let m = Int(t) / 60
+        let s = Int(t) % 60
+        return m > 0
+            ? "Shot at \(m):\(String(format: "%02d", s))"
+            : "Shot at 0:\(String(format: "%02d", s))"
+    }
 }
 
 // MARK: - ArcOverlayRepresentable
 
 /// Wraps ArcOverlayHostView (UIView + CAShapeLayer) for SwiftUI.
+/// imagePoint is normalized (0–1), Y=0 at top (UIKit convention).
 private struct ArcOverlayRepresentable: UIViewRepresentable {
-    let wristPosition: SIMD3<Float>
+    let imagePoint: CGPoint
 
-    func makeUIView(context: Context) -> ArcOverlayHostView {
-        ArcOverlayHostView()
-    }
+    func makeUIView(context: Context) -> ArcOverlayHostView { ArcOverlayHostView() }
 
     func updateUIView(_ view: ArcOverlayHostView, context: Context) {
-        // Defer so the view has a valid bounds from its first layout pass
+        // Defer until the view has been laid out and has a valid non-zero bounds
         DispatchQueue.main.async {
-            view.arcLayer.update(wristPosition: self.wristPosition,
-                                 viewSize: view.bounds.size)
+            guard view.bounds.width > 0, view.bounds.height > 0 else { return }
+            view.arcLayer.update(imagePoint: self.imagePoint, viewSize: view.bounds.size)
         }
     }
 }
@@ -161,6 +220,7 @@ private struct ArcOverlayRepresentable: UIViewRepresentable {
             shot: ProcessedShot(
                 timestamp: 5.0,
                 frameIndex: 300,
+                frameRate: 60.0,
                 audioConfidence: 0.85,
                 joints: [:],
                 transformedJoints: [
@@ -175,7 +235,9 @@ private struct ArcOverlayRepresentable: UIViewRepresentable {
                     "right_elbow":    SIMD3( 0.36,  0.20,  0.10),
                     "left_wrist":     SIMD3(-0.38,  0.05,  0.00),
                     "right_wrist":    SIMD3( 0.52,  0.10,  0.20),
-                ]
+                ],
+                windowFrames: [],
+                wristImagePoint: CGPoint(x: 0.65, y: 0.45)
             ),
             videoURL: URL(string: "about:blank")!,
             dominantSide: .right

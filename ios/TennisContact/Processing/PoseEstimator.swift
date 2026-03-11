@@ -4,9 +4,10 @@
 // Python reference: python/src/pose_estimation.py
 // Replaces MediaPipe with Apple Vision VNDetectHumanBodyPose3DRequest (iOS 17+).
 //
-// For each audio-detected contact, extracts ±5 frames (11 frames total) from
+// For each audio-detected contact, extracts ±10 frames (21 frames total) from
 // the video and runs pose estimation on each. The frame with the highest total
-// joint confidence is selected as the canonical contact frame.
+// joint confidence is selected as the canonical contact frame. ALL frames are
+// stored in windowFrames for skeleton animation in ShotDetailView.
 //
 // Joint mapping (Apple Vision → our string keys, matching Python LANDMARK_MAP):
 //   .leftShoulder / .rightShoulder → "left_shoulder" / "right_shoulder"
@@ -16,13 +17,9 @@
 //   .root                          → "root"
 //   (synthetic) midpoint of hips   → "pelvis"  (mirrors Python _add_synthetic())
 //
-// NOTE: VNHumanBodyRecognizedPoint3D has no .confidence property (unlike the
-// 2D VNRecognizedPoint). Best-frame selection uses joint count as the quality
-// proxy instead.
-//
-// NOTE: VNDetectHumanBodyPose3DRequest returns metric-space coordinates on
-// LiDAR devices (iPhone 12 Pro+) and relative coordinates on all others.
-// Consistency tracking works on both; label metric vs. relative in the UI (Task 11).
+// NOTE: VNHumanBodyPose3DObservation is a subclass of VNHumanBodyPoseObservation,
+// so we can also call the 2D recognizedPoint() API for pixel-space coordinates.
+// Vision 2D coords have Y=0 at the bottom of the image; we flip to UIKit convention.
 //
 // See docs/architecture.md Component 2 and docs/implementation_v3.md §3.3
 
@@ -30,11 +27,23 @@ import Foundation
 import Vision
 import AVFoundation
 
+// MARK: - FrameData
+
+/// One frame in the pose window: frame index + 3D joint positions.
+/// rawJoints holds camera-space coords when created by PoseEstimator;
+/// ProcessingPipeline Stage 4 replaces them with pelvis-centred transformed coords.
+struct FrameData {
+    let frameIndex: Int
+    let rawJoints:  [String: SIMD3<Float>]
+}
+
+// MARK: - PoseEstimator
+
 struct PoseEstimator {
 
-    // MARK: - Joint mapping
+    // MARK: - Joint mapping (3D)
 
-    /// Apple Vision joint names → our canonical string keys (matches Python).
+    /// Apple Vision 3D joint names → our canonical string keys.
     static let jointKeyMap: [VNHumanBodyPose3DObservation.JointName: String] = [
         .leftShoulder:   "left_shoulder",
         .rightShoulder:  "right_shoulder",
@@ -85,8 +94,8 @@ struct PoseEstimator {
         contact: ContactCandidate,
         frameRate: Double
     ) async -> ProcessedShot {
-        // ±5 frames around the audio-detected contact (11 frames total)
-        let windowIndices = (-5...5).map { contact.frameIndex + $0 }
+        // ±10 frames around the audio-detected contact (21 frames total)
+        let windowIndices = (-10...10).map { contact.frameIndex + $0 }
         let times = windowIndices.map { idx in
             CMTime(seconds: max(0, Double(idx) / frameRate), preferredTimescale: 600)
         }
@@ -94,34 +103,48 @@ struct PoseEstimator {
         // Extract all frames in one batch call
         let frames = await extractFrames(generator: generator, times: times)
 
-        // Run pose on each frame; keep the one with the most joints detected
-        var bestJoints: [String: SIMD3<Float>] = [:]
-        var bestQuality: Float = -1
-        var bestFrameIndex = contact.frameIndex
+        // Run pose on each frame; collect all results and track the best
+        var bestJoints:      [String: SIMD3<Float>] = [:]
+        var bestImagePoints: [String: CGPoint]       = [:]
+        var bestQuality:     Float = -1
+        var bestFrameIndex   = contact.frameIndex
+        var windowFrames:    [FrameData]             = []
 
         for (i, (_, cgImage)) in frames.enumerated() {
             guard let image = cgImage else { continue }
-            let (joints, quality) = runPose(on: image)
+            let (joints, imagePoints, quality) = runPose(on: image)
+            if joints.isEmpty { continue }
+
+            // Collect every frame that yielded pose data
+            windowFrames.append(FrameData(frameIndex: windowIndices[i], rawJoints: joints))
+
             if quality > bestQuality {
-                bestQuality    = quality
-                bestJoints     = joints
-                bestFrameIndex = windowIndices[i]
+                bestQuality      = quality
+                bestJoints       = joints
+                bestImagePoints  = imagePoints
+                bestFrameIndex   = windowIndices[i]
             }
         }
+
+        // Pick the dominant-wrist image point; Pipeline Stage 4 will select correct side.
+        // Store both; Pipeline picks based on dominantSide setting.
+        let wristImagePoint = bestImagePoints["right_wrist"] ?? bestImagePoints["left_wrist"]
 
         return ProcessedShot(
             timestamp:         Double(bestFrameIndex) / frameRate,
             frameIndex:        bestFrameIndex,
+            frameRate:         frameRate,
             audioConfidence:   contact.confidence,
             joints:            bestJoints,
-            transformedJoints: [:]   // filled in by ProcessingPipeline Stage 4
+            transformedJoints: [:],         // filled in by ProcessingPipeline Stage 4
+            windowFrames:      windowFrames,
+            wristImagePoint:   wristImagePoint
         )
     }
 
     // MARK: - Frame extraction
 
     /// Batch-extract CGImages at the requested times using the async callback API.
-    /// Thread-safe: all writes to `results` happen on a private serial queue.
     private func extractFrames(
         generator: AVAssetImageGenerator,
         times: [CMTime]
@@ -150,27 +173,29 @@ struct PoseEstimator {
     // MARK: - Pose inference
 
     /// Run VNDetectHumanBodyPose3DRequest on a single CGImage.
-    /// Returns (joints, quality). quality = number of joints detected; used to
-    /// pick the best frame in the ±5-frame window. joints is empty if no person
-    /// is detected. VNHumanBodyRecognizedPoint3D has no confidence property so
-    /// joint count is used as the quality proxy.
-    private func runPose(on image: CGImage) -> ([String: SIMD3<Float>], Float) {
+    ///
+    /// Returns (joints3D, imagePoints2D, quality).
+    /// - joints3D: world-space 3D positions keyed by our string names.
+    /// - imagePoints2D: normalized screen-space (0–1, Y flipped for UIKit) for wrists.
+    /// - quality: number of joints detected; used to pick the best frame.
+    private func runPose(
+        on image: CGImage
+    ) -> (joints: [String: SIMD3<Float>], imagePoints: [String: CGPoint], quality: Float) {
         let request = VNDetectHumanBodyPose3DRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
 
         do {
             try handler.perform([request])
         } catch {
-            return ([:], 0)
+            return ([:], [:], 0)
         }
 
-        guard let observation = request.results?.first else { return ([:], 0) }
+        guard let observation = request.results?.first else { return ([:], [:], 0) }
 
+        // 3D joints
         var joints: [String: SIMD3<Float>] = [:]
-
         for (visionName, key) in Self.jointKeyMap {
             guard let joint = try? observation.recognizedPoint(visionName) else { continue }
-            // The 4×4 position matrix: translation is in column 3
             let col = joint.position.columns.3
             joints[key] = SIMD3<Float>(col.x, col.y, col.z)
         }
@@ -180,6 +205,19 @@ struct PoseEstimator {
             joints["pelvis"] = (l + r) * 0.5
         }
 
-        return (joints, Float(joints.count))
+        // 2D image-space wrist positions (for ArcOverlay — no projection needed)
+        // VNHumanBodyPose3DObservation inherits from VNHumanBodyPoseObservation,
+        // giving access to the 2D recognizedPoint() API.
+        // Vision Y=0 is at the bottom of the image; flip for UIKit (Y=0 at top).
+        var imagePoints: [String: CGPoint] = [:]
+        let obs2D = observation as VNHumanBodyPoseObservation
+        if let rw = try? obs2D.recognizedPoint(.rightWrist), rw.confidence > 0.3 {
+            imagePoints["right_wrist"] = CGPoint(x: CGFloat(rw.x), y: 1.0 - CGFloat(rw.y))
+        }
+        if let lw = try? obs2D.recognizedPoint(.leftWrist), lw.confidence > 0.3 {
+            imagePoints["left_wrist"] = CGPoint(x: CGFloat(lw.x), y: 1.0 - CGFloat(lw.y))
+        }
+
+        return (joints, imagePoints, Float(joints.count))
     }
 }

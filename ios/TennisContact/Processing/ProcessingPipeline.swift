@@ -26,6 +26,8 @@ struct ProcessedShot {
     let timestamp: TimeInterval
     /// Frame index of the canonical contact frame.
     let frameIndex: Int
+    /// Frame rate of the source video (needed for timestamp ↔ frame index conversion).
+    let frameRate: Double
     /// Confidence score from AudioDetector (0.4–1.0).
     let audioConfidence: Float
     /// Raw joint positions in Vision camera space, keyed by joint name.
@@ -33,6 +35,12 @@ struct ProcessedShot {
     /// Pelvis-centred, ground-adjusted joint positions (CoordinateTransform output).
     /// Coordinate system: X = lateral (dominant side positive), Y = up, Z = toward camera.
     let transformedJoints: [String: SIMD3<Float>]
+    /// All frames in the ±10 window. rawJoints holds pelvis-centred transformed coords
+    /// after Pipeline Stage 4 runs CoordinateTransform on them.
+    let windowFrames: [FrameData]
+    /// Normalized screen-space position (0–1, UIKit convention, Y=0 at top) of the
+    /// dominant wrist at the contact frame. Used by ArcOverlay — no projection needed.
+    let wristImagePoint: CGPoint?
 }
 
 // MARK: - PipelineEvent
@@ -90,16 +98,6 @@ actor ProcessingPipeline {
     // MARK: Public API
 
     /// Run the full four-stage pipeline and stream progress + final results back to the caller.
-    ///
-    /// Usage in SwiftUI:
-    /// ```swift
-    /// for try await event in ProcessingPipeline().process(videoURL: url) {
-    ///     switch event {
-    ///     case .stage(let s):   currentStage = s
-    ///     case .completed(let shots): self.shots = shots
-    ///     }
-    /// }
-    /// ```
     func process(videoURL: URL) -> AsyncThrowingStream<PipelineEvent, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -112,7 +110,6 @@ actor ProcessingPipeline {
                     continuation.yield(.stage(.detectingContacts))
                     let rawContacts = try await AudioDetector().detect(videoURL: videoURL)
 
-                    // Assign frame indices now that we have the frame rate
                     let contacts = rawContacts.map { c in
                         ContactCandidate(
                             timestamp: c.timestamp,
@@ -135,18 +132,35 @@ actor ProcessingPipeline {
                     let sideRaw = UserDefaults.standard.string(forKey: "dominantSide")
                                   ?? DominantSide.right.rawValue
                     let side = DominantSide(rawValue: sideRaw) ?? .right
+                    let wristKey = side == .right ? "right_wrist" : "left_wrist"
 
                     let transformedShots: [ProcessedShot] = shots.map { shot in
+                        // Transform contact-frame joints
                         var j = CoordinateTransform.pelvisOriginTransform(
                             shot.joints, dominantSide: side)
                         let groundY = CoordinateTransform.estimateGroundPlane(joints: j)
                         j = CoordinateTransform.applyGroundPlane(joints: j, groundY: groundY)
+
+                        // Transform all window frames using the same ground plane
+                        let transformedFrames: [FrameData] = shot.windowFrames.map { frame in
+                            var fj = CoordinateTransform.pelvisOriginTransform(
+                                frame.rawJoints, dominantSide: side)
+                            fj = CoordinateTransform.applyGroundPlane(joints: fj, groundY: groundY)
+                            return FrameData(frameIndex: frame.frameIndex, rawJoints: fj)
+                        }
+
+                        // Prefer dominant-side wrist image point; fall back to other wrist
+                        let wristPt = shot.wristImagePoint   // already set by PoseEstimator
+
                         return ProcessedShot(
-                            timestamp:        shot.timestamp,
-                            frameIndex:       shot.frameIndex,
-                            audioConfidence:  shot.audioConfidence,
-                            joints:           shot.joints,
-                            transformedJoints: j
+                            timestamp:         shot.timestamp,
+                            frameIndex:        shot.frameIndex,
+                            frameRate:         shot.frameRate,
+                            audioConfidence:   shot.audioConfidence,
+                            joints:            shot.joints,
+                            transformedJoints: j,
+                            windowFrames:      transformedFrames,
+                            wristImagePoint:   wristPt
                         )
                     }
                     // StatisticsEngine.compute(shots:) wired in Task 10.

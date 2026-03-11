@@ -7,10 +7,15 @@
 // Pelvis shown as a white reference crosshair.
 // User can drag to rotate the 3D view freely (allowsCameraControl = true).
 //
+// Animated use: ShotDetailView drives `joints` from a periodic time observer.
+// updateUIView calls updatePositions() (moves existing nodes in-place) rather
+// than rebuild() to avoid per-frame node churn at 60fps.
+//
 // Coordinate system matches CoordinateTransform output:
 //   X = lateral (positive = dominant hand side)
 //   Y = vertical (positive = upward)
 //   Z = depth (positive = toward camera)
+// SceneKit uses right-hand coords with Y up; we flip Z (negate) on entry.
 //
 // See docs/implementation_v3.md Section 3.3 and Task 9
 
@@ -34,14 +39,10 @@ struct SkeletonRenderer: UIViewRepresentable {
         scnView.backgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1.0)
         scnView.antialiasingMode = .multisampling2X
 
-        // Default camera: eye-level, slight offset to the side for 3/4 view
         let cameraNode = SCNNode()
         cameraNode.name = "defaultCamera"
         cameraNode.camera = SCNCamera()
         cameraNode.position = SCNVector3(0.3, 0.7, 2.0)
-        let lookAt = SCNLookAtConstraint(target: nil)
-        lookAt.isGimbalLockEnabled = true
-        // Point toward body centre (slightly above pelvis)
         cameraNode.look(at: SCNVector3(0, 0.6, 0))
         scnView.scene?.rootNode.addChildNode(cameraNode)
 
@@ -51,16 +52,21 @@ struct SkeletonRenderer: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
-        context.coordinator.rebuild(joints: joints, dominantSide: dominantSide)
+        // Efficient in-place update when skeleton already exists; full rebuild otherwise.
+        if context.coordinator.hasBuiltSkeleton {
+            context.coordinator.updatePositions(joints: joints, dominantSide: dominantSide)
+        } else {
+            context.coordinator.rebuild(joints: joints, dominantSide: dominantSide)
+        }
     }
 
     // MARK: - Coordinator
 
     final class Coordinator {
         var scnView: SCNView?
+        var hasBuiltSkeleton = false
 
-        // Bone pairs — both endpoints must be present to draw the cylinder
-        private static let bones: [(String, String)] = [
+        static let bones: [(String, String)] = [
             ("left_shoulder",  "right_shoulder"),
             ("left_shoulder",  "left_elbow"),
             ("left_elbow",     "left_wrist"),
@@ -76,10 +82,11 @@ struct SkeletonRenderer: UIViewRepresentable {
             ("head",           "neck"),
         ]
 
+        // MARK: Full rebuild
+
         func rebuild(joints: [String: SIMD3<Float>], dominantSide: DominantSide) {
             guard let scene = scnView?.scene else { return }
 
-            // Remove previous skeleton geometry, keep camera
             scene.rootNode.childNodes
                 .filter { $0.name?.hasPrefix("jt_") == true
                        || $0.name?.hasPrefix("bn_") == true
@@ -87,16 +94,15 @@ struct SkeletonRenderer: UIViewRepresentable {
                        || $0.name == "xhair_z" }
                 .forEach { $0.removeFromParentNode() }
 
+            hasBuiltSkeleton = false
             guard !joints.isEmpty else { return }
 
             let wristKey = dominantSide == .right ? "right_wrist" : "left_wrist"
 
-            // Joint spheres
             for (key, pos) in joints {
                 let sphere = SCNSphere(radius: 0.025)
                 let mat = SCNMaterial()
                 if key == wristKey {
-                    // Dominant wrist: glowing orange
                     mat.diffuse.contents  = UIColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 1.0)
                     mat.emission.contents = UIColor(red: 1.0, green: 0.42, blue: 0.0, alpha: 0.7)
                 } else {
@@ -109,32 +115,60 @@ struct SkeletonRenderer: UIViewRepresentable {
                 scene.rootNode.addChildNode(node)
             }
 
-            // Bone cylinders
             for (a, b) in Coordinator.bones {
                 guard let pa = joints[a], let pb = joints[b] else { continue }
-                if let boneNode = boneCylinder(from: pa, to: pb, name: "bn_\(a)_\(b)") {
+                if let boneNode = makeBone(from: pa, to: pb, name: "bn_\(a)_\(b)") {
                     scene.rootNode.addChildNode(boneNode)
                 }
             }
 
-            // Pelvis crosshair
             if let pelvis = joints["pelvis"] {
                 addCrosshair(to: scene, at: pelvis)
+            }
+
+            hasBuiltSkeleton = true
+        }
+
+        // MARK: In-place position update (called every video frame)
+
+        func updatePositions(joints: [String: SIMD3<Float>], dominantSide: DominantSide) {
+            guard let scene = scnView?.scene, !joints.isEmpty else { return }
+
+            // Move joint spheres
+            for (key, pos) in joints {
+                scene.rootNode.childNode(withName: "jt_\(key)", recursively: false)?
+                    .position = scnPos(pos)
+            }
+
+            // Update bone cylinders in-place
+            for (a, b) in Coordinator.bones {
+                guard let pa = joints[a], let pb = joints[b],
+                      let node = scene.rootNode.childNode(
+                          withName: "bn_\(a)_\(b)", recursively: false)
+                else { continue }
+                updateBone(node: node, from: pa, to: pb)
+            }
+
+            // Move crosshair
+            if let pelvis = joints["pelvis"] {
+                let p = scnPos(pelvis)
+                scene.rootNode.childNode(withName: "xhair_x", recursively: false)?.position = p
+                scene.rootNode.childNode(withName: "xhair_z", recursively: false)?.position = p
             }
         }
 
         // MARK: Helpers
 
-        private func scnPos(_ v: SIMD3<Float>) -> SCNVector3 {
-            SCNVector3(v.x, v.y, -v.z)   // flip Z: OpenGL convention (into screen = negative)
+        func scnPos(_ v: SIMD3<Float>) -> SCNVector3 {
+            SCNVector3(v.x, v.y, -v.z)   // flip Z for SceneKit right-hand convention
         }
 
-        private func boneCylinder(
+        private func makeBone(
             from a: SIMD3<Float>,
             to b: SIMD3<Float>,
             name: String
         ) -> SCNNode? {
-            let diff = b - a
+            let diff   = b - a
             let length = simd_length(diff)
             guard length > 0.005 else { return nil }
 
@@ -145,48 +179,60 @@ struct SkeletonRenderer: UIViewRepresentable {
 
             let node = SCNNode(geometry: cylinder)
             node.name = name
+            node.position = scnPos((a + b) * 0.5)
+            applyOrientation(to: node, from: a, to: b)
+            return node
+        }
 
-            // Midpoint
-            let mid = (a + b) * 0.5
-            node.position = scnPos(mid)
+        private func updateBone(node: SCNNode, from a: SIMD3<Float>, to b: SIMD3<Float>) {
+            let diff   = b - a
+            let length = simd_length(diff)
+            guard length > 0.005 else { return }
 
-            // Orient cylinder (Y-axis by default) to point along diff
-            let dir = simd_normalize(diff)
-            // SCNNode Y axis in world space after applying scnPos flip on Z:
-            // Since we flip Z in scnPos, we also need to flip the diff.z
+            node.position = scnPos((a + b) * 0.5)
+            if let cyl = node.geometry as? SCNCylinder {
+                cyl.height = CGFloat(length)
+            }
+            applyOrientation(to: node, from: a, to: b)
+        }
+
+        private func applyOrientation(to node: SCNNode,
+                                      from a: SIMD3<Float>, to b: SIMD3<Float>) {
+            let diff   = b - a
+            let length = simd_length(diff)
+            guard length > 0.005 else { return }
+
+            let dir    = simd_normalize(diff)
+            // Apply same Z flip used in scnPos
             let scnDir = SIMD3<Float>(dir.x, dir.y, -dir.z)
             let yAxis  = SIMD3<Float>(0, 1, 0)
             let cross  = simd_cross(yAxis, scnDir)
             let crossLen = simd_length(cross)
+
             if crossLen < 1e-5 {
-                if scnDir.y < 0 {
-                    node.eulerAngles = SCNVector3(Float.pi, 0, 0)
-                }
+                node.eulerAngles = scnDir.y < 0
+                    ? SCNVector3(Float.pi, 0, 0)
+                    : SCNVector3(0, 0, 0)
             } else {
                 let angle = acos(max(-1, min(1, simd_dot(yAxis, scnDir))))
                 let axis  = simd_normalize(cross)
                 node.rotation = SCNVector4(axis.x, axis.y, axis.z, angle)
             }
-            return node
         }
 
         private func addCrosshair(to scene: SCNScene, at pos: SIMD3<Float>) {
             let white = UIColor.white
 
-            // X-axis bar
             let barX = SCNBox(width: 0.30, height: 0.005, length: 0.005, chamferRadius: 0)
-            let matX = SCNMaterial()
-            matX.diffuse.contents = white
+            let matX = SCNMaterial(); matX.diffuse.contents = white
             barX.materials = [matX]
             let xNode = SCNNode(geometry: barX)
             xNode.name = "xhair_x"
             xNode.position = scnPos(pos)
             scene.rootNode.addChildNode(xNode)
 
-            // Z-axis bar (maps to depth; shown as Z in SceneKit after flip)
             let barZ = SCNBox(width: 0.005, height: 0.005, length: 0.30, chamferRadius: 0)
-            let matZ = SCNMaterial()
-            matZ.diffuse.contents = white
+            let matZ = SCNMaterial(); matZ.diffuse.contents = white
             barZ.materials = [matZ]
             let zNode = SCNNode(geometry: barZ)
             zNode.name = "xhair_z"
