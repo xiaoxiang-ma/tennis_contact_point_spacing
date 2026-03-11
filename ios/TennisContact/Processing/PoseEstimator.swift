@@ -17,9 +17,10 @@
 //   .root                          → "root"
 //   (synthetic) midpoint of hips   → "pelvis"  (mirrors Python _add_synthetic())
 //
-// NOTE: VNHumanBodyPose3DObservation is a subclass of VNHumanBodyPoseObservation,
-// so we can also call the 2D recognizedPoint() API for pixel-space coordinates.
-// Vision 2D coords have Y=0 at the bottom of the image; we flip to UIKit convention.
+// NOTE: VNHumanBodyPose3DObservation and VNHumanBodyPoseObservation are NOT in an
+// inheritance relationship on iOS 17+ / Xcode 26. To get 2D pixel-space wrist coords,
+// we run VNDetectHumanBodyPoseRequest alongside the 3D request in the same handler.
+// Vision Y=0 is at the bottom of the image; we flip to UIKit convention (Y=0 at top).
 //
 // See docs/architecture.md Component 2 and docs/implementation_v3.md §3.3
 
@@ -172,25 +173,34 @@ struct PoseEstimator {
 
     // MARK: - Pose inference
 
-    /// Run VNDetectHumanBodyPose3DRequest on a single CGImage.
+    /// Run pose estimation on a single CGImage.
+    ///
+    /// Runs VNDetectHumanBodyPose3DRequest (3D world-space joints) and
+    /// VNDetectHumanBodyPoseRequest (2D normalized image-space points) together
+    /// on the same VNImageRequestHandler — Vision executes both in one pass.
+    ///
+    /// NOTE: VNHumanBodyPose3DObservation and VNHumanBodyPoseObservation are
+    /// NOT in an inheritance relationship on iOS 17+ / Xcode 26, so we cannot
+    /// cast between them. Running the 2D request separately is the correct approach.
     ///
     /// Returns (joints3D, imagePoints2D, quality).
     /// - joints3D: world-space 3D positions keyed by our string names.
     /// - imagePoints2D: normalized screen-space (0–1, Y flipped for UIKit) for wrists.
-    /// - quality: number of joints detected; used to pick the best frame.
+    /// - quality: number of 3D joints detected; used to pick the best frame.
     private func runPose(
         on image: CGImage
     ) -> (joints: [String: SIMD3<Float>], imagePoints: [String: CGPoint], quality: Float) {
-        let request = VNDetectHumanBodyPose3DRequest()
+        let request3D = VNDetectHumanBodyPose3DRequest()
+        let request2D = VNDetectHumanBodyPoseRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
 
         do {
-            try handler.perform([request])
+            try handler.perform([request3D, request2D])
         } catch {
             return ([:], [:], 0)
         }
 
-        guard let observation = request.results?.first else { return ([:], [:], 0) }
+        guard let observation = request3D.results?.first else { return ([:], [:], 0) }
 
         // 3D joints
         var joints: [String: SIMD3<Float>] = [:]
@@ -205,17 +215,16 @@ struct PoseEstimator {
             joints["pelvis"] = (l + r) * 0.5
         }
 
-        // 2D image-space wrist positions (for ArcOverlay — no projection needed)
-        // VNHumanBodyPose3DObservation inherits from VNHumanBodyPoseObservation,
-        // giving access to the 2D recognizedPoint() API.
-        // Vision Y=0 is at the bottom of the image; flip for UIKit (Y=0 at top).
+        // 2D image-space wrist positions from the separate 2D observation.
+        // Vision Y=0 is at the bottom of the image; flip to UIKit convention (Y=0 at top).
         var imagePoints: [String: CGPoint] = [:]
-        let obs2D = observation as VNHumanBodyPoseObservation
-        if let rw = try? obs2D.recognizedPoint(.rightWrist), rw.confidence > 0.3 {
-            imagePoints["right_wrist"] = CGPoint(x: CGFloat(rw.x), y: 1.0 - CGFloat(rw.y))
-        }
-        if let lw = try? obs2D.recognizedPoint(.leftWrist), lw.confidence > 0.3 {
-            imagePoints["left_wrist"] = CGPoint(x: CGFloat(lw.x), y: 1.0 - CGFloat(lw.y))
+        if let obs2D = request2D.results?.first {
+            if let rw = try? obs2D.recognizedPoint(.rightWrist), rw.confidence > 0.3 {
+                imagePoints["right_wrist"] = CGPoint(x: CGFloat(rw.x), y: 1.0 - CGFloat(rw.y))
+            }
+            if let lw = try? obs2D.recognizedPoint(.leftWrist), lw.confidence > 0.3 {
+                imagePoints["left_wrist"] = CGPoint(x: CGFloat(lw.x), y: 1.0 - CGFloat(lw.y))
+            }
         }
 
         return (joints, imagePoints, Float(joints.count))
