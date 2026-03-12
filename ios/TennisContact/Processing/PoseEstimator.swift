@@ -14,13 +14,16 @@
 //   .leftElbow    / .rightElbow    → "left_elbow"    / "right_elbow"
 //   .leftWrist    / .rightWrist    → "left_wrist"    / "right_wrist"
 //   .leftHip      / .rightHip     → "left_hip"      / "right_hip"
+//   .leftKnee     / .rightKnee    → "left_knee"     / "right_knee"
+//   .leftAnkle    / .rightAnkle   → "left_ankle"    / "right_ankle"
 //   .root                          → "root"
+//   .centerShoulder                → "neck"
+//   .head                          → "head"
 //   (synthetic) midpoint of hips   → "pelvis"  (mirrors Python _add_synthetic())
 //
-// NOTE: VNHumanBodyPose3DObservation and VNHumanBodyPoseObservation are NOT in an
-// inheritance relationship on iOS 17+ / Xcode 26. To get 2D pixel-space wrist coords,
-// we run VNDetectHumanBodyPoseRequest alongside the 3D request in the same handler.
-// Vision Y=0 is at the bottom of the image; we flip to UIKit convention (Y=0 at top).
+// Frames are extracted sequentially with copyCGImage(at:actualTime:) so each
+// CGImage is released immediately after Vision processes it — prevents OOM.
+// Frames before video start (idx < 0) are skipped to avoid CMTime collisions.
 //
 // See docs/architecture.md Component 2 and docs/implementation_v3.md §3.3
 
@@ -46,16 +49,21 @@ struct PoseEstimator {
 
     /// Apple Vision 3D joint names → our canonical string keys.
     static let jointKeyMap: [VNHumanBodyPose3DObservation.JointName: String] = [
+        .centerShoulder: "neck",
+        .head:           "head",
         .leftShoulder:   "left_shoulder",
         .rightShoulder:  "right_shoulder",
         .leftElbow:      "left_elbow",
         .rightElbow:     "right_elbow",
         .leftWrist:      "left_wrist",
         .rightWrist:     "right_wrist",
+        .root:           "root",
         .leftHip:        "left_hip",
         .rightHip:       "right_hip",
-        .root:           "root",
-        .centerShoulder: "neck",
+        .leftKnee:       "left_knee",
+        .rightKnee:      "right_knee",
+        .leftAnkle:      "left_ankle",
+        .rightAnkle:     "right_ankle",
     ]
 
     // MARK: - Public API
@@ -95,41 +103,33 @@ struct PoseEstimator {
         contact: ContactCandidate,
         frameRate: Double
     ) async -> ProcessedShot {
-        // ±10 frames around the audio-detected contact (21 frames total)
-        let windowIndices = (-10...10).map { contact.frameIndex + $0 }
-        let times = windowIndices.map { idx in
-            CMTime(seconds: max(0, Double(idx) / frameRate), preferredTimescale: 600)
-        }
+        var bestJoints:    [String: SIMD3<Float>] = [:]
+        var bestQuality:   Float = -1
+        var bestFrameIndex = contact.frameIndex
+        var windowFrames:  [FrameData] = []
 
-        // Extract all frames in one batch call
-        let frames = await extractFrames(generator: generator, times: times)
+        // Process one frame at a time so each CGImage is released before the next loads.
+        // Skip frames before video start (idx < 0) to avoid CMTime collisions at t=0.
+        for offset in -10...10 {
+            let idx = contact.frameIndex + offset
+            guard idx >= 0 else { continue }
 
-        // Run pose on each frame; collect all results and track the best
-        var bestJoints:      [String: SIMD3<Float>] = [:]
-        var bestImagePoints: [String: CGPoint]       = [:]
-        var bestQuality:     Float = -1
-        var bestFrameIndex   = contact.frameIndex
-        var windowFrames:    [FrameData]             = []
+            let t = CMTime(seconds: Double(idx) / frameRate, preferredTimescale: 600)
+            guard let cgImage = try? generator.copyCGImage(at: t, actualTime: nil) else { continue }
 
-        for (i, (_, cgImage)) in frames.enumerated() {
-            guard let image = cgImage else { continue }
-            let (joints, imagePoints, quality) = runPose(on: image)
-            if joints.isEmpty { continue }
+            let (joints, quality) = runPose(on: cgImage)
+            // cgImage goes out of scope here — released immediately
 
-            // Collect every frame that yielded pose data
-            windowFrames.append(FrameData(frameIndex: windowIndices[i], rawJoints: joints))
+            guard !joints.isEmpty else { continue }
+
+            windowFrames.append(FrameData(frameIndex: idx, rawJoints: joints))
 
             if quality > bestQuality {
-                bestQuality      = quality
-                bestJoints       = joints
-                bestImagePoints  = imagePoints
-                bestFrameIndex   = windowIndices[i]
+                bestQuality    = quality
+                bestJoints     = joints
+                bestFrameIndex = idx
             }
         }
-
-        // Pick the dominant-wrist image point; Pipeline Stage 4 will select correct side.
-        // Store both; Pipeline picks based on dominantSide setting.
-        let wristImagePoint = bestImagePoints["right_wrist"] ?? bestImagePoints["left_wrist"]
 
         return ProcessedShot(
             timestamp:         Double(bestFrameIndex) / frameRate,
@@ -139,68 +139,30 @@ struct PoseEstimator {
             joints:            bestJoints,
             transformedJoints: [:],         // filled in by ProcessingPipeline Stage 4
             windowFrames:      windowFrames,
-            wristImagePoint:   wristImagePoint
+            wristImagePoint:   nil
         )
-    }
-
-    // MARK: - Frame extraction
-
-    /// Batch-extract CGImages at the requested times using the async callback API.
-    private func extractFrames(
-        generator: AVAssetImageGenerator,
-        times: [CMTime]
-    ) async -> [(CMTime, CGImage?)] {
-        await withCheckedContinuation { continuation in
-            var results = [(CMTime, CGImage?)](repeating: (.zero, nil), count: times.count)
-            let queue   = DispatchQueue(label: "pose.frame-extraction")
-            var remaining = times.count
-
-            generator.generateCGImagesAsynchronously(
-                forTimes: times.map { NSValue(time: $0) }
-            ) { requestedTime, image, _, result, _ in
-                queue.sync {
-                    if let idx = times.firstIndex(of: requestedTime) {
-                        results[idx] = (requestedTime, result == .succeeded ? image : nil)
-                    }
-                    remaining -= 1
-                    if remaining == 0 {
-                        continuation.resume(returning: results)
-                    }
-                }
-            }
-        }
     }
 
     // MARK: - Pose inference
 
     /// Run pose estimation on a single CGImage.
     ///
-    /// Runs VNDetectHumanBodyPose3DRequest (3D world-space joints) and
-    /// VNDetectHumanBodyPoseRequest (2D normalized image-space points) together
-    /// on the same VNImageRequestHandler — Vision executes both in one pass.
-    ///
-    /// NOTE: VNHumanBodyPose3DObservation and VNHumanBodyPoseObservation are
-    /// NOT in an inheritance relationship on iOS 17+ / Xcode 26, so we cannot
-    /// cast between them. Running the 2D request separately is the correct approach.
-    ///
-    /// Returns (joints3D, imagePoints2D, quality).
+    /// Returns (joints3D, quality).
     /// - joints3D: world-space 3D positions keyed by our string names.
-    /// - imagePoints2D: normalized screen-space (0–1, Y flipped for UIKit) for wrists.
     /// - quality: number of 3D joints detected; used to pick the best frame.
     private func runPose(
         on image: CGImage
-    ) -> (joints: [String: SIMD3<Float>], imagePoints: [String: CGPoint], quality: Float) {
+    ) -> (joints: [String: SIMD3<Float>], quality: Float) {
         let request3D = VNDetectHumanBodyPose3DRequest()
-        let request2D = VNDetectHumanBodyPoseRequest()
         let handler = VNImageRequestHandler(cgImage: image, orientation: .up, options: [:])
 
         do {
-            try handler.perform([request3D, request2D])
+            try handler.perform([request3D])
         } catch {
-            return ([:], [:], 0)
+            return ([:], 0)
         }
 
-        guard let observation = request3D.results?.first else { return ([:], [:], 0) }
+        guard let observation = request3D.results?.first else { return ([:], 0) }
 
         // 3D joints
         var joints: [String: SIMD3<Float>] = [:]
@@ -215,18 +177,6 @@ struct PoseEstimator {
             joints["pelvis"] = (l + r) * 0.5
         }
 
-        // 2D image-space wrist positions from the separate 2D observation.
-        // Vision Y=0 is at the bottom of the image; flip to UIKit convention (Y=0 at top).
-        var imagePoints: [String: CGPoint] = [:]
-        if let obs2D = request2D.results?.first {
-            if let rw = try? obs2D.recognizedPoint(.rightWrist), rw.confidence > 0.3 {
-                imagePoints["right_wrist"] = CGPoint(x: CGFloat(rw.x), y: 1.0 - CGFloat(rw.y))
-            }
-            if let lw = try? obs2D.recognizedPoint(.leftWrist), lw.confidence > 0.3 {
-                imagePoints["left_wrist"] = CGPoint(x: CGFloat(lw.x), y: 1.0 - CGFloat(lw.y))
-            }
-        }
-
-        return (joints, imagePoints, Float(joints.count))
+        return (joints, Float(joints.count))
     }
 }

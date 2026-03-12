@@ -66,6 +66,8 @@ struct ShotDetailView: View {
         .navigationTitle(shotTitle)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            // Disable buffering wait so all seeks respond immediately
+            player.automaticallyWaitsToMinimizeStalling = false
             // Seek video to contact frame on open; leave paused
             let t = CMTime(seconds: shot.timestamp, preferredTimescale: 600)
             player.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)

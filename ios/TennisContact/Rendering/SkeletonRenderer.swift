@@ -67,6 +67,7 @@ struct SkeletonRenderer: UIViewRepresentable {
         var hasBuiltSkeleton = false
 
         static let bones: [(String, String)] = [
+            // Upper body
             ("left_shoulder",  "right_shoulder"),
             ("left_shoulder",  "left_elbow"),
             ("left_elbow",     "left_wrist"),
@@ -80,6 +81,11 @@ struct SkeletonRenderer: UIViewRepresentable {
             ("neck",           "left_shoulder"),
             ("neck",           "right_shoulder"),
             ("head",           "neck"),
+            // Legs
+            ("left_hip",       "left_knee"),
+            ("right_hip",      "right_knee"),
+            ("left_knee",      "left_ankle"),
+            ("right_knee",     "right_ankle"),
         ]
 
         // MARK: Full rebuild
